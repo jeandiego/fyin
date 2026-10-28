@@ -15,7 +15,7 @@ func (h *Handler) Register(mux *http.ServeMux) { mux.HandleFunc("GET /v1/investm
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	p, err := h.store.Portfolio(r.Context())
 	if err != nil {
-		log.Printf("investments: %v", err)
+		log.Printf("investments portfolio: %v", err)
 		http.Error(w, `{"error":"falha ao montar o patrimônio"}`, http.StatusInternalServerError)
 		return
 	}
