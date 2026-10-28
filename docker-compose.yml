@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: fyin
+      POSTGRES_PASSWORD: fyin
+      POSTGRES_DB: fyin
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      # postgres 18+: o volume é montado em /var/lib/postgresql (PGDATA fica em /var/lib/postgresql/18/docker)
+      - pgdata:/var/lib/postgresql
+      # shortcut: só roda no primeiro boot do volume; trocar por goose quando o schema mudar com dados reais
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  pgdata:
