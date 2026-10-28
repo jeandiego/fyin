@@ -24,6 +24,7 @@ type fakePluggy struct {
 	statuses     []string
 	gate         chan struct{}
 	refreshCalls atomic.Int32
+	refreshErr   error
 }
 
 func (f *fakePluggy) Item(context.Context, string) (pluggy.Item, error) {
@@ -39,6 +40,9 @@ func (f *fakePluggy) Item(context.Context, string) (pluggy.Item, error) {
 
 func (f *fakePluggy) Refresh(context.Context, string) (pluggy.Item, error) {
 	f.refreshCalls.Add(1)
+	if f.refreshErr != nil {
+		return pluggy.Item{}, f.refreshErr
+	}
 	it := f.item
 	it.Status = "UPDATING"
 	return it, nil

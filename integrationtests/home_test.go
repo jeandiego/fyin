@@ -46,7 +46,8 @@ func seedHome(t *testing.T, pool *pgxpool.Pool) {
 		INSERT INTO items (id, owner, connector, status, synced_at) VALUES
 			('`+itemID+`', 'ana', 'MeuPluggy', 'UPDATED', '2026-10-27T12:00:00Z');
 		INSERT INTO accounts (id, item_id, type, subtype, name, balance, raw) VALUES
-			('`+checkingID+`', '`+itemID+`', 'BANK', 'CHECKING_ACCOUNT', 'Conta', 1000.00, '{}'),
+			('`+checkingID+`', '`+itemID+`', 'BANK', 'CHECKING_ACCOUNT', 'Conta', 1000.00,
+				'{"bankData":{"reservedBalances":[{"availableAmounts":[{"amount":200.50}]},{"availableAmounts":[{"amount":0}]}]}}'),
 			('`+cardID+`', '`+itemID+`', 'CREDIT', 'CREDIT_CARD', 'Cartao', 9999.00, '{}');
 		INSERT INTO balance_snapshots VALUES ('`+checkingID+`', '2026-10-27T12:00:00Z', 1000.00);
 		INSERT INTO transactions (id, account_id, date, description, amount, type, status, category, raw) VALUES
@@ -96,7 +97,7 @@ func TestHome_CurrentMonthCountsOnlyRealSpending(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, code)
 	assert.Equal(t, "1000.00", got["balance"])
-	assert.Equal(t, "6000.00", got["invested"], "investimento ativo + patrimônio manual, sem o resgatado")
+	assert.Equal(t, "6200.50", got["invested"], "investimento ativo + patrimônio manual + reservas da conta, sem o resgatado")
 	// financiamento 300 + pix 25 + loja 200 - estorno 50; fora: pagamentos de fatura (categoria, marcador e descrição),
 	// salário e a compra de 30/09 às 23h30
 	assert.Equal(t, map[string]any{"spent": "475.00", "goal": "0.00", "day": 28.0, "daysInMonth": 31.0, "since": nil}, got["spending"])

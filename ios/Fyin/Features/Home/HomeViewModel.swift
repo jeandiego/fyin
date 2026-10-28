@@ -45,7 +45,10 @@ final class HomeViewModel {
         let month = selected
         lastShown = current
         summaries = [:]
+        // A busca local termina em milissegundos; sem isso a barra não chega a ser vista.
+        async let minimum: Void = { try? await Task.sleep(for: .milliseconds(900)) }()
         await fetch(month)
+        await minimum
     }
 
     private func fetch(_ month: String?) async {
