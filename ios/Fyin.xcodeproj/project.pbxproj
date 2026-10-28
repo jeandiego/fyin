@@ -1,0 +1,82 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+		A1 /* Fyin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Fyin.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2 /* Fyin */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Fyin; sourceTree = "<group>"; };
+		A3 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A4 = {isa = PBXGroup; children = (A2, A5); sourceTree = "<group>"; };
+		A5 /* Products */ = {isa = PBXGroup; children = (A1); name = Products; sourceTree = "<group>"; };
+		A6 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A7 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A8 /* Fyin */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B1;
+			buildPhases = (A6, A3, A7);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (A2);
+			name = Fyin;
+			productName = Fyin;
+			productReference = A1;
+			productType = "com.apple.product-type.application";
+		};
+		A9 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {LastUpgradeCheck = 2700;};
+			buildConfigurationList = B2;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = A4;
+			productRefGroup = A5;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (A8);
+		};
+		C1 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+			ALWAYS_SEARCH_USER_PATHS = NO;
+			IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+			SDKROOT = iphoneos;
+			SWIFT_VERSION = 5.0;
+			ONLY_ACTIVE_ARCH = YES;
+		}; };
+		C2 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
+			ALWAYS_SEARCH_USER_PATHS = NO;
+			IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+			SDKROOT = iphoneos;
+			SWIFT_VERSION = 5.0;
+		}; };
+		C3 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
+			PRODUCT_BUNDLE_IDENTIFIER = com.fyin.app;
+			PRODUCT_NAME = "$(TARGET_NAME)";
+			GENERATE_INFOPLIST_FILE = YES;
+			INFOPLIST_FILE = "Fyin-Info.plist";
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+			INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
+			INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance = NO;
+			INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait";
+			CODE_SIGN_STYLE = Automatic;
+			CODE_SIGNING_ALLOWED = NO;
+			TARGETED_DEVICE_FAMILY = 1;
+		}; };
+		C4 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
+			PRODUCT_BUNDLE_IDENTIFIER = com.fyin.app;
+			PRODUCT_NAME = "$(TARGET_NAME)";
+			GENERATE_INFOPLIST_FILE = YES;
+			INFOPLIST_FILE = "Fyin-Info.plist";
+			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+			INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
+			INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance = NO;
+			INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait";
+			CODE_SIGN_STYLE = Automatic;
+			TARGETED_DEVICE_FAMILY = 1;
+		}; };
+		B1 = {isa = XCConfigurationList; buildConfigurations = (C3, C4); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		B2 = {isa = XCConfigurationList; buildConfigurations = (C1, C2); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+	};
+	rootObject = A9;
+}
