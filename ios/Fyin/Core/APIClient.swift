@@ -7,9 +7,19 @@ struct APIClient: Sendable {
     var session: URLSession = .shared
 
     func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
+        try await send("GET", path, query: query)
+    }
+
+    /// POST sem corpo (ações como sincronizar); o servidor responde 2xx com JSON.
+    func post<T: Decodable>(_ path: String) async throws -> T {
+        try await send("POST", path)
+    }
+
+    private func send<T: Decodable>(_ method: String, _ path: String, query: [URLQueryItem] = []) async throws -> T {
         var url = baseURL.appending(path: path)
         if !query.isEmpty { url.append(queryItems: query) }
         var request = URLRequest(url: url)
+        request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {

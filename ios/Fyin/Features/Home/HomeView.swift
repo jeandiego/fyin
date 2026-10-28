@@ -2,6 +2,9 @@ import SwiftUI
 
 struct HomeView: View {
     let model: HomeViewModel
+    /// Sync da Pluggy em andamento (disparado em Ajustes); a home mostra o mesmo andamento do pull.
+    var syncing = false
+    var openSettings: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var pill
@@ -9,6 +12,7 @@ struct HomeView: View {
     @State private var balanceTemplateWidth: CGFloat = 0
 
     private var loading: Bool { model.loading }
+    private var busy: Bool { model.refreshing || syncing }
 
     var body: some View {
         GeometryReader { geo in
@@ -22,6 +26,7 @@ struct HomeView: View {
             .ignoresSafeArea(edges: [.top, .horizontal])
             .scrollEdgeEffectHidden(true, for: .top)
             .refreshable { await model.refresh() }
+            .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
         }
         .background(Color.qBg)
         .sensoryFeedback(.selection, trigger: model.selected)
@@ -36,8 +41,15 @@ struct HomeView: View {
             HStack {
                 monthPills
                 Spacer()
-                Image("arrow-up-right").resizable().frame(width: 22, height: 22)
-                    .foregroundStyle(.white).opacity(loading ? 0 : 1)
+                Button(action: openSettings) {
+                    Image(systemName: "gearshape.fill").font(.system(size: 18)).foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .overlay(Circle().stroke(.white.opacity(0.16)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Ajustes")
+                .opacity(loading ? 0 : 1)
             }
             Spacer(minLength: 120)
             VStack(alignment: .leading, spacing: 22) {
@@ -124,6 +136,7 @@ struct HomeView: View {
     }
 
     private var syncText: String {
+        if syncing { return "Sincronizando com os bancos…" }
         if model.refreshing { return "Atualizando…" }
         if model.failed { return "Não foi possível carregar. Puxe para tentar de novo." }
         guard let syncedAt = model.current?.syncedAt else { return "Ainda não sincronizado" }
@@ -133,15 +146,15 @@ struct HomeView: View {
 
     private var syncLine: some View {
         HStack(spacing: 6) {
-            TimelineView(.animation(paused: !model.refreshing || reduceMotion)) { ctx in
+            TimelineView(.animation(paused: !busy || reduceMotion)) { ctx in
                 // 1 volta a cada 1.2s, linear, só enquanto atualiza.
                 let turn = ctx.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2
                 Image("sync").resizable().frame(width: 13, height: 13)
-                    .rotationEffect(.degrees(model.refreshing && !reduceMotion ? turn * 360 : 0))
-                    .foregroundStyle(model.refreshing ? Color.qAccent : .white.opacity(0.55))
+                    .rotationEffect(.degrees(busy && !reduceMotion ? turn * 360 : 0))
+                    .foregroundStyle(busy ? Color.qAccent : .white.opacity(0.55))
             }
             Text(syncText).font(.urbanist(13)).contentTransition(.opacity)
-                .foregroundStyle(.white.opacity(model.refreshing ? 0.8 : 0.55))
+                .foregroundStyle(.white.opacity(busy ? 0.8 : 0.55))
             Spacer(minLength: 8)
         }
         .padding(.top, 6)
@@ -157,7 +170,29 @@ struct HomeView: View {
             Spacer()
         }
         .padding(.top, 16)
-        .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.1)).frame(height: 1) }
+        .overlay(alignment: .top) { divider }
+    }
+
+    // O divisor vira barra de progresso indeterminada (a API não informa andamento) enquanto atualiza.
+    private var divider: some View {
+        Rectangle().fill(.white.opacity(0.1)).frame(height: 1)
+            .overlay {
+                GeometryReader { g in
+                    TimelineView(.animation(paused: !busy || reduceMotion)) { ctx in
+                        // um trecho de 35% da largura cruza o divisor a cada 1.4s, linear
+                        let turn = ctx.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
+                        let width = g.size.width * 0.35
+                        LinearGradient(colors: [.clear, .qAccent, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: reduceMotion ? g.size.width : width)
+                            .offset(x: reduceMotion ? 0 : -width + turn * (g.size.width + width))
+                    }
+                }
+                .clipped()
+                .frame(height: 2)
+                .opacity(busy ? 1 : 0)
+                .animation(Motion.standard(Motion.base), value: busy)
+                .accessibilityHidden(true)
+            }
     }
 
     // MARK: Cards do mês
