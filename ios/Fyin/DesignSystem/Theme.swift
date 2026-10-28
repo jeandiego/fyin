@@ -18,6 +18,10 @@ extension Color {
     static let qOverInk = Color(hex: 0xB5462F)
     static let qGlowLime = Color(hex: 0xB4E02A)
     static let qHairline = Color(hex: 0x0E0D0D, alpha: 0.08)
+    static let qScrim = Color(hex: 0x0E0D0D, alpha: 0.35)
+    static let qOnDarkLine = Color.white.opacity(0.12)
+    static let qOnDark2 = Color.white.opacity(0.55)
+    static let qOnDark3 = Color.white.opacity(0.3)
 }
 
 extension Font {
@@ -49,4 +53,6 @@ enum Motion {
 
     static func standard(_ duration: Double) -> Animation { .timingCurve(0.2, 0, 0, 1, duration: duration) }
     static func enter(_ duration: Double) -> Animation { .timingCurve(0.16, 1, 0.3, 1, duration: duration) }
+    /// Mola sem overshoot (o quadro 13 proíbe bounce); retoma do ponto atual se interrompida.
+    static func spring(_ duration: Double) -> Animation { .spring(duration: duration, bounce: 0) }
 }

@@ -9,6 +9,8 @@ final class HomeViewModel {
     private(set) var summaries: [String: HomeSummary] = [:]
     private(set) var failed = false
     private(set) var refreshing = false
+    /// Patrimônio aberto em contas; sempre o atual, não depende do mês.
+    private(set) var portfolio: Portfolio?
 
     private let repository: HomeRepository
 
@@ -32,6 +34,7 @@ final class HomeViewModel {
     /// Busca o mês selecionado se ainda não está em cache; sem seleção, o mês atual.
     func ensureLoaded() async {
         if selected.flatMap({ summaries[$0] }) == nil { await fetch(selected) }
+        if portfolio == nil { portfolio = try? await repository.portfolio() }
         // Busca os outros meses dos seletores em segundo plano para a troca ser instantânea.
         for month in months where summaries[month] == nil {
             if let summary = try? await repository.summary(month: month) { summaries[summary.month] = summary }
@@ -48,6 +51,7 @@ final class HomeViewModel {
         // A busca local termina em milissegundos; sem isso a barra não chega a ser vista.
         async let minimum: Void = { try? await Task.sleep(for: .milliseconds(900)) }()
         await fetch(month)
+        if let fresh = try? await repository.portfolio() { portfolio = fresh }
         await minimum
     }
 

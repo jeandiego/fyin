@@ -8,6 +8,10 @@ struct HomeView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var pill
+    @Namespace private var hero
+    /// Modal do patrimônio: `open` é o destino da geometria; `presented` o mantém visível até recolher de vez.
+    @State private var portfolioOpen = false
+    @State private var portfolioPresented = false
     @State private var balanceRoom: CGFloat = 0
     @State private var balanceTemplateWidth: CGFloat = 0
 
@@ -16,17 +20,40 @@ struct HomeView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ScrollView {
-                VStack(spacing: 8) {
-                    balanceCard(safeTop: geo.safeAreaInsets.top)
-                    monthCards.padding(.horizontal, 12)
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        balanceCard(safeTop: geo.safeAreaInsets.top)
+                        monthCards.padding(.horizontal, 12)
+                    }
+                    .padding(.bottom, 20)
                 }
-                .padding(.bottom, 20)
+                .ignoresSafeArea(edges: [.top, .horizontal])
+                .scrollEdgeEffectHidden(true, for: .top)
+                .refreshable { await model.refresh() }
+                .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
+                .blur(radius: portfolioOpen ? 6 : 0)
+                .accessibilityHidden(portfolioOpen)
+
+                Color.qScrim.ignoresSafeArea()
+                    .opacity(portfolioOpen ? 1 : 0)
+                    .allowsHitTesting(portfolioOpen)
+                    .onTapGesture(perform: closePortfolio)
+                    .accessibilityHidden(true)
+
+                if let portfolio = model.portfolio {
+                    // Sempre no layout (invisível) para já saber a própria altura quando a linha abrir.
+                    PortfolioSheet(portfolio: portfolio, open: portfolioOpen, hero: hero,
+                                   maxHeight: geo.size.height + geo.safeAreaInsets.bottom - 12,
+                                   close: closePortfolio)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                        .opacity(reduceMotion ? (portfolioOpen ? 1 : 0) : (portfolioPresented ? 1 : 0))
+                        .allowsHitTesting(portfolioOpen)
+                        .accessibilityHidden(!portfolioOpen)
+                        .ignoresSafeArea(edges: .bottom)
+                }
             }
-            .ignoresSafeArea(edges: [.top, .horizontal])
-            .scrollEdgeEffectHidden(true, for: .top)
-            .refreshable { await model.refresh() }
-            .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
         }
         .background(Color.qBg)
         .sensoryFeedback(.selection, trigger: model.selected)
@@ -160,16 +187,29 @@ struct HomeView: View {
         .padding(.top, 6)
     }
 
+    // A linha inteira é o ponto de partida do morph: fundo, rótulo e valor viram o modal (board 16).
     private var patrimony: some View {
-        HStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Patrimônio investido").font(.urbanist(13)).foregroundStyle(.white.opacity(0.55))
-                slot(model.current?.invested).font(.urbanist(22, .light)).foregroundStyle(.white)
+        Button(action: openPortfolio) {
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Patrimônio investido").font(.urbanist(13)).foregroundStyle(.white.opacity(0.55))
+                        .hero(PortfolioHero.label, in: hero, isSource: !portfolioOpen, enabled: !reduceMotion)
+                    slot(model.current?.invested).font(.urbanist(22, .light)).foregroundStyle(.white)
+                        .hero(PortfolioHero.value, in: hero, isSource: !portfolioOpen, enabled: !reduceMotion)
+                }
+                .opacity(portfolioPresented && !reduceMotion ? 0 : 1)
+                .skeleton(loading, dark: true)
+                Spacer()
             }
-            .skeleton(loading, dark: true)
-            Spacer()
+            .padding(.top, 16)
+            .contentShape(.rect)
+            .background {
+                Color.qInk.hero(PortfolioHero.shell, in: hero, isSource: !portfolioOpen, enabled: !reduceMotion)
+            }
         }
-        .padding(.top, 16)
+        .buttonStyle(PressStyle())
+        .disabled(model.portfolio == nil)
+        .accessibilityHint("Abre o patrimônio por conta")
         .overlay(alignment: .top) { divider }
     }
 
@@ -330,6 +370,20 @@ struct HomeView: View {
     }
 
     // MARK: Ações
+
+    private func openPortfolio() {
+        portfolioPresented = true
+        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.considered)) { portfolioOpen = true }
+    }
+
+    // Inverso da abertura, mais curto. Se reabrir no meio, a mola retoma dali e o modal não some.
+    private func closePortfolio() {
+        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base)) {
+            portfolioOpen = false
+        } completion: {
+            if !portfolioOpen { portfolioPresented = false }
+        }
+    }
 
     // Só a pílula desliza (animação dos seletores); os cards ficam e apenas os números giram.
     private func select(_ m: String) {

@@ -19,6 +19,9 @@ struct Money: Decodable, Equatable, Sendable {
     /// "R$ 6.240", sem centavos (cards).
     var short: String { "R$ " + value.formatted(.number.precision(.fractionLength(0)).locale(Self.ptBR)) }
 
+    /// "R$ 6.240,30", com centavos (listas).
+    var full: String { "R$ " + value.formatted(.number.precision(.fractionLength(2)).locale(Self.ptBR)) }
+
     /// ("24.318", ",52"), para o saldo com centavos esmaecidos.
     var split: (whole: String, cents: String) {
         let text = value.formatted(.number.precision(.fractionLength(2)).locale(Self.ptBR))

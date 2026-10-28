@@ -61,4 +61,11 @@ enum MonthLabel {
         return date.formatted(style.day().month(.abbreviated))
             .replacingOccurrences(of: ".", with: "").replacingOccurrences(of: " de ", with: " ")
     }
+
+    /// "2027-08-15" → "ago 2027".
+    static func monthYear(_ isoDate: String) -> String {
+        guard let date = try? Date(isoDate, strategy: .iso8601.year().month().day()) else { return isoDate }
+        return date.formatted(style.month(.abbreviated).year())
+            .replacingOccurrences(of: ".", with: "").replacingOccurrences(of: " de ", with: " ")
+    }
 }
