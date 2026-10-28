@@ -62,7 +62,8 @@ struct PortfolioSheet: View {
             .frame(height: min(bodyHeight, max(maxHeight - topHeight, 0)))
         }
         .background {
-            RoundedRectangle(cornerRadius: open ? 28 : 0, style: .continuous)
+            // Cantos de baixo concêntricos aos do aparelho; os de cima, longe deles, ficam nos 28 do design.
+            ConcentricRectangle(corners: .concentric(minimum: .fixed(open ? 28 : 0)), isUniform: false)
                 .fill(Color.qInk)
                 .stroke(Color.qOnDarkLine.opacity(open ? 1 : 0))
                 .shadow(color: .black.opacity(open ? 0.32 : 0), radius: 30, y: 24)
@@ -73,8 +74,11 @@ struct PortfolioSheet: View {
         .accessibilityAddTraits(.isModal)
         .accessibilityAction(.escape) { escape() }
         .onChange(of: open) { _, isOpen in
-            // Fechado, volta para a lista do início na próxima abertura (o filtro fica).
-            if !isOpen, page != .accounts { page = .accounts; scroll.scrollTo(edge: .top) }
+            guard !isOpen else { return }
+            if page != .accounts { page = .accounts; scroll.scrollTo(edge: .top) }
+            // O valor pousa na linha da home, que mostra o total de todos: com filtro, os rolos giram de volta
+            // enquanto o modal encolhe, em vez de o número trocar de uma vez no pouso.
+            if owner != nil { withAnimation(Motion.spring(Motion.base)) { owner = nil } }
         }
     }
 
@@ -119,8 +123,8 @@ struct PortfolioSheet: View {
 
     private var accountsTotal: some View {
         VStack(alignment: .leading, spacing: 6) {
-            amount(shownTotal, size: 44, currency: 18)
-                .hero(PortfolioHero.value, in: hero, isSource: open, enabled: !reduceMotion)
+            PortfolioAmount(money: shownTotal, progress: open ? 1 : 0)
+                .hero(PortfolioHero.value, in: hero, isSource: open, enabled: !reduceMotion, properties: .position, anchor: .leading)
             Text(countLine).font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
                 .contentTransition(.opacity)
                 .blurFade(!open)
@@ -335,6 +339,35 @@ struct PortfolioSheet: View {
     }
 }
 
+// Total do modal. Em progress 0 é idêntico ao valor da linha da home ("R$ 28.677", 22pt, R$ branco, sem centavos)
+// e cresce até o do modal (44pt, R$ e centavos esmaecidos) junto com a mola: a troca entre os dois não aparece.
+// Os dígitos são SlotText, então o filtro gira os rolos como o saldo da home.
+struct PortfolioAmount: View, Animatable {
+    let money: Money
+    var progress: Double
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    private func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * progress }
+
+    var body: some View {
+        let parts = money.split
+        HStack(alignment: .lastTextBaseline, spacing: 0) {
+            Text("R$ ").font(.urbanist(lerp(22, 18), .light)).foregroundStyle(.white.opacity(lerp(1, 0.3)))
+            SlotText(text: parts.whole, value: money.value).foregroundStyle(.white)
+            SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count)
+                .foregroundStyle(.white.opacity(0.3)).opacity(progress)
+        }
+        .font(.urbanist(lerp(22, 44), .light)).tracking(lerp(0, -1.6))
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(money.full)
+    }
+}
+
 // Pressão de 100ms (escala 0,98), igual para a linha da home e as linhas do modal.
 struct PressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -360,7 +393,12 @@ extension View {
     func blurFade(_ hidden: Bool) -> some View { modifier(BlurFade(hidden: hidden)) }
 
     /// matchedGeometryEffect que some com Reduce Motion (aí tudo vira crossfade).
-    @ViewBuilder func hero(_ id: String, in namespace: Namespace.ID, isSource: Bool = true, enabled: Bool) -> some View {
-        if enabled { matchedGeometryEffect(id: id, in: namespace, isSource: isSource) } else { self }
+    @ViewBuilder func hero(_ id: String, in namespace: Namespace.ID, isSource: Bool = true, enabled: Bool,
+                           properties: MatchedGeometryProperties = .frame, anchor: UnitPoint = .center) -> some View {
+        if enabled {
+            matchedGeometryEffect(id: id, in: namespace, properties: properties, anchor: anchor, isSource: isSource)
+        } else {
+            self
+        }
     }
 }

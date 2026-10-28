@@ -12,6 +12,7 @@ struct HomeView: View {
     /// Modal do patrimônio: `open` é o destino da geometria; `presented` o mantém visível até recolher de vez.
     @State private var portfolioOpen = false
     @State private var portfolioPresented = false
+    @State private var portfolioCloses = 0
     @State private var balanceRoom: CGFloat = 0
     @State private var balanceTemplateWidth: CGFloat = 0
 
@@ -44,10 +45,11 @@ struct HomeView: View {
                 if let portfolio = model.portfolio {
                     // Sempre no layout (invisível) para já saber a própria altura quando a linha abrir.
                     PortfolioSheet(portfolio: portfolio, open: portfolioOpen, hero: hero,
-                                   maxHeight: geo.size.height + geo.safeAreaInsets.bottom - 12,
+                                   maxHeight: geo.size.height + geo.safeAreaInsets.bottom - 8,
                                    close: closePortfolio)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 12)
+                        // Perto da borda física, sem encostar; os cantos de baixo seguem a curva do aparelho.
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
                         .opacity(reduceMotion ? (portfolioOpen ? 1 : 0) : (portfolioPresented ? 1 : 0))
                         .allowsHitTesting(portfolioOpen)
                         .accessibilityHidden(!portfolioOpen)
@@ -195,7 +197,8 @@ struct HomeView: View {
                     Text("Patrimônio investido").font(.urbanist(13)).foregroundStyle(.white.opacity(0.55))
                         .hero(PortfolioHero.label, in: hero, isSource: !portfolioOpen, enabled: !reduceMotion)
                     slot(model.current?.invested).font(.urbanist(22, .light)).foregroundStyle(.white)
-                        .hero(PortfolioHero.value, in: hero, isSource: !portfolioOpen, enabled: !reduceMotion)
+                        .hero(PortfolioHero.value, in: hero, isSource: !portfolioOpen, enabled: !reduceMotion,
+                              properties: .position, anchor: .leading)
                 }
                 .opacity(portfolioPresented && !reduceMotion ? 0 : 1)
                 .skeleton(loading, dark: true)
@@ -378,10 +381,16 @@ struct HomeView: View {
 
     // Inverso da abertura, mais curto. Se reabrir no meio, a mola retoma dali e o modal não some.
     private func closePortfolio() {
+        portfolioCloses += 1
+        let close = portfolioCloses
         withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base)) {
             portfolioOpen = false
         } completion: {
-            if !portfolioOpen { portfolioPresented = false }
+            // Recolhido, o valor do modal é idêntico ao da linha; espera os rolos do filtro pousarem antes de trocar.
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                if !portfolioOpen, close == portfolioCloses { portfolioPresented = false }
+            }
         }
     }
 
