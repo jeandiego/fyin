@@ -1,0 +1,4 @@
+.env
+ios/build/
+xcuserdata/
+ios/Fyin/App/Secrets.swift
