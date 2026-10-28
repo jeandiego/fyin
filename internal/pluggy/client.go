@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -105,6 +107,17 @@ func (c *Client) auth(ctx context.Context) error {
 	return nil
 }
 
+// Error é a resposta de erro da API; quem chama pode olhar Status e Body para decidir o que fazer.
+type Error struct {
+	Method, Path string
+	Status       int
+	Body         string
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("%s %s: %d %s", e.Method, e.Path, e.Status, e.Body)
+}
+
 func (c *Client) do(req *http.Request, out any) error {
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -116,7 +129,7 @@ func (c *Client) do(req *http.Request, out any) error {
 		return err
 	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("%s %s: %d %s", req.Method, req.URL.Path, resp.StatusCode, b)
+		return &Error{Method: req.Method, Path: req.URL.Path, Status: resp.StatusCode, Body: string(b)}
 	}
 	return json.Unmarshal(b, out)
 }
@@ -147,6 +160,22 @@ func (c *Client) get(ctx context.Context, pathAndQuery string, out any) error {
 func (c *Client) Item(ctx context.Context, id string) (Item, error) {
 	var it Item
 	return it, c.get(ctx, "/items/"+id, &it)
+}
+
+// Owner devolve o nome completo do titular do item (GET /identity?itemId=).
+// Falha com 4xx se o conector não oferece o produto Identity.
+func (c *Client) Owner(ctx context.Context, itemID string) (string, error) {
+	var id struct {
+		FullName string `json:"fullName"`
+	}
+	return id.FullName, c.get(ctx, "/identity?itemId="+itemID, &id)
+}
+
+// NotRefreshable diz se a Pluggy recusou o Refresh porque o conector não aceita atualização sob demanda
+// (ex.: MeuPluggy, que a própria Pluggy mantém atualizado).
+func NotRefreshable(err error) bool {
+	var e *Error
+	return errors.As(err, &e) && e.Status == http.StatusBadRequest && strings.Contains(e.Body, "cant be updated")
 }
 
 // Refresh pede à Pluggy que releia o banco (PATCH /items/{id}, corpo vazio: usa as credenciais salvas).

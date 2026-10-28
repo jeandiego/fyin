@@ -99,6 +99,10 @@ func (s *Service) run(id, owner string) {
 
 func (s *Service) work(ctx context.Context, id, owner string) (fsync.Result, error) {
 	it, err := s.api.Refresh(ctx, id)
+	if pluggy.NotRefreshable(err) {
+		// Conector que a Pluggy atualiza sozinha: não há o que pedir, só importar o que ela já tem.
+		it, err = s.api.Item(ctx, id)
+	}
 	if err != nil {
 		return fsync.Result{}, fmt.Errorf("refresh: %w", err)
 	}

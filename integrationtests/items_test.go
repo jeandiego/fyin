@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"fyin/internal/items"
+	"fyin/internal/pluggy"
 	"fyin/internal/sync"
 	"fyin/internal/testdb"
 
@@ -78,6 +79,32 @@ func TestItemsSync_AsksPluggyToRefreshThenImports(t *testing.T) {
 	assert.Equal(t, "250.00", checkingBalance(t, pool))
 	_, item := call(t, h, "GET", "/v1/items/"+itemID)
 	assert.EqualValues(t, 2, item["sync"].(map[string]any)["result"].(map[string]any)["accounts"])
+}
+
+func TestItemsSync_ConnectorThatCannotBeRefreshedStillImports(t *testing.T) {
+	t.Parallel()
+	fake := newFake()
+	pool, h := newItemsAPI(t, fake)
+	fake.accounts[0].Balance = "250.00"
+	fake.refreshErr = &pluggy.Error{Method: "PATCH", Path: "/items/" + itemID, Status: 400, Body: `{"message":"MeuPluggy item cant be updated"}`}
+
+	call(t, h, "POST", "/v1/items/"+itemID+"/sync")
+
+	assert.Equal(t, items.Succeeded, waitFinished(t, h))
+	assert.Equal(t, "250.00", checkingBalance(t, pool))
+}
+
+func TestItemsSync_RefreshRejectedForOtherReasonFails(t *testing.T) {
+	t.Parallel()
+	fake := newFake()
+	pool, h := newItemsAPI(t, fake)
+	fake.accounts[0].Balance = "250.00"
+	fake.refreshErr = &pluggy.Error{Method: "PATCH", Path: "/items/" + itemID, Status: 400, Body: `{"message":"MFA required"}`}
+
+	call(t, h, "POST", "/v1/items/"+itemID+"/sync")
+
+	assert.Equal(t, items.Failed, waitFinished(t, h))
+	assert.Equal(t, "100.50", checkingBalance(t, pool))
 }
 
 func TestItemsSync_BankAskingForActionFailsAndKeepsData(t *testing.T) {

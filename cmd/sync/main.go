@@ -1,4 +1,4 @@
-// Comando sync: copia os itens da Pluggy (env ITEMS=dono:itemId,...) para o Postgres (DATABASE_URL).
+// Comando sync: copia os itens da Pluggy (env ITEMS=itemId,...; "dono:itemId" força o dono) para o Postgres (DATABASE_URL).
 package main
 
 import (
@@ -27,13 +27,23 @@ func main() {
 
 	items := os.Getenv("ITEMS")
 	if items == "" {
-		log.Fatal("defina ITEMS=dono:itemId[,dono:itemId]")
+		log.Fatal("defina ITEMS=itemId[,itemId]")
 	}
 	failed := false
 	for _, spec := range strings.Split(items, ",") {
 		owner, id, ok := strings.Cut(strings.TrimSpace(spec), ":")
 		if !ok {
-			log.Fatalf("ITEMS inválido %q, esperado dono:itemId", spec)
+			owner, id = "", owner
+		}
+		if owner == "" {
+			full, err := api.Owner(ctx, id)
+			if err != nil || full == "" {
+				log.Printf("%s: ERRO sem dono (use dono:itemId): %v", id, err)
+				failed = true
+				continue
+			}
+			// o dono é um rótulo curto; o nome completo (dado pessoal) não é guardado
+			owner = strings.ToLower(strings.Fields(full)[0])
 		}
 		res, err := sync.Item(ctx, pool, api, owner, id)
 		if err != nil {
