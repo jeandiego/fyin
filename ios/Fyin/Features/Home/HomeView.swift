@@ -13,6 +13,8 @@ struct HomeView: View {
     @State private var morph: Morph?
     @State private var presented: Morph?
     @State private var closes = 0
+    /// Blur da Início sob o modal: só com o modal parado. Animado junto com a mola, o blur de tela cheia engasgava o morph.
+    @State private var backdropBlur = false
     /// Única saída do modal do cartão: push na pilha da home, com o modal montado por baixo.
     @State private var cardRoute: CardRoute?
     @State private var balanceRoom: CGFloat = 0
@@ -37,7 +39,7 @@ struct HomeView: View {
                 .scrollEdgeEffectHidden(true, for: .top)
                 .refreshable { await model.refresh() }
                 .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
-                .blur(radius: morph != nil ? 6 : 0)
+                .blur(radius: backdropBlur ? 6 : 0)
                 .accessibilityHidden(morph != nil)
 
                 Color.qScrim.ignoresSafeArea()
@@ -427,13 +429,20 @@ struct HomeView: View {
 
     private func openMorph(_ which: Morph) {
         presented = which
-        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.considered)) { morph = which }
+        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.considered)) {
+            morph = which
+        } completion: {
+            guard morph == which else { return }
+            withAnimation(Motion.standard(Motion.quick)) { backdropBlur = true }
+        }
     }
 
     // Inverso da abertura, mais curto. Se reabrir no meio, a mola retoma dali e o modal não some.
     private func closeMorph() {
         closes += 1
         let close = closes
+        // Sai na hora, fora da mola de fechar; sob o scrim a troca não aparece.
+        backdropBlur = false
         withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base)) {
             morph = nil
         } completion: {

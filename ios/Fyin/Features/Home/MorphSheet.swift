@@ -27,6 +27,8 @@ struct MorphSheet<Top: View, Content: View, Footer: View>: View {
     @State private var topHeight: CGFloat = 60
     @State private var footerHeight: CGFloat = 0
     @State private var edges = ScrollEdges()
+    /// Sombra só com o modal parado: desenhá-la numa forma que muda a cada frame da mola custa caro.
+    @State private var lifted = false
 
     /// Lado da rolagem com mais conteúdo além da borda: só ali o fade aparece.
     private struct ScrollEdges: Equatable {
@@ -50,10 +52,10 @@ struct MorphSheet<Top: View, Content: View, Footer: View>: View {
             VStack(alignment: .leading, spacing: 0) { top }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topHeight = $0 }
             ScrollView {
-                ZStack(alignment: .top) { content }
+                PageStack { content }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
-                        // A medida chega depois do layout, fora da transação: anima a altura com a mesma mola.
-                        withAnimation(reduceMotion ? nil : Motion.spring(Motion.base)) { bodyHeight = h }
+                        // A medida chega depois do layout, fora da transação: anima a altura (quadro 13, 320ms).
+                        withAnimation(reduceMotion ? nil : Motion.spring(Motion.considered)) { bodyHeight = h }
                     }
             }
             .scrollPosition($scroll)
@@ -74,12 +76,48 @@ struct MorphSheet<Top: View, Content: View, Footer: View>: View {
             ConcentricRectangle(corners: .concentric(minimum: .fixed(open ? 28 : closedRadius)), isUniform: false)
                 .fill(open ? (light ? Color.qCard : Color.qInk) : closedFill)
                 .stroke((light ? Color.qHairline : Color.qOnDarkLine).opacity(open ? 1 : 0))
-                .shadow(color: .black.opacity(open ? 0.32 : 0), radius: 30, y: 24)
                 .hero(shell, in: hero, isSource: open, enabled: !reduceMotion)
+        }
+        // Fora do matchedGeometryEffect: fica no retângulo do modal aberto e só aparece quando ele pousa.
+        .background {
+            ConcentricRectangle(corners: .concentric(minimum: .fixed(28)), isUniform: false)
+                .fill(light ? Color.qCard : Color.qInk)
+                .shadow(color: .black.opacity(0.32), radius: 30, y: 24)
+                .opacity(lifted ? 1 : 0)
+        }
+        .onChange(of: open) { _, isOpen in
+            // Fechando, some na hora: o modal encolhe e a sombra ficaria no tamanho aberto.
+            guard isOpen else { lifted = false; return }
+            withAnimation(Motion.standard(Motion.quick).delay(Motion.considered)) { lifted = true }
         }
         .accessibilityAddTraits(.isModal)
         .accessibilityAction(.escape) { escape() }
     }
+}
+
+/// Pilha das páginas do modal: o que sai continua desenhado, mas a altura é só a do que entra.
+/// Sem isso a altura vai ao maior dos dois durante a troca e só corrige quando a saída termina (sobe em dois tempos).
+private struct PageStack: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let staying = subviews.filter { !$0[Leaving.self] }
+        let sizes = (staying.isEmpty ? Array(subviews) : staying).map { $0.sizeThatFits(.init(width: proposal.width, height: nil)) }
+        return CGSize(width: proposal.width ?? sizes.map(\.width).max() ?? 0, height: sizes.map(\.height).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for subview in subviews {
+            subview.place(at: bounds.origin, anchor: .topLeading, proposal: .init(width: bounds.width, height: nil))
+        }
+    }
+}
+
+private struct Leaving: LayoutValueKey {
+    static let defaultValue = false
+}
+
+private struct LeavingMark: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View { content.layoutValue(key: Leaving.self, value: on) }
 }
 
 extension MorphSheet where Footer == EmptyView {
@@ -155,17 +193,21 @@ struct MorphTotal: View, Animatable {
 
     private func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * progress }
 
+    // Os dígitos ficam sempre em 44pt e crescem por escala: mudar a fonte a cada frame refazia o layout
+    // e remedia a altura de cada rolo do SlotText durante toda a mola. Só o "R$" muda de tamanho de verdade.
     var body: some View {
         let parts = money.split
         let tint = ink.mix(with: to, by: progress)
+        let scale = lerp(from / 44, 1)
         HStack(alignment: .lastTextBaseline, spacing: 0) {
-            Text("R$ ").font(.urbanist(lerp(from, 18), .light)).foregroundStyle(tint.opacity(lerp(1, 0.3)))
+            Text("R$ ").font(.urbanist(lerp(from, 18) / scale, .light)).foregroundStyle(tint.opacity(lerp(1, 0.3)))
             SlotText(text: parts.whole, value: money.value).foregroundStyle(tint)
             SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count)
                 .foregroundStyle(to.opacity(0.3)).opacity(progress)
         }
-        .font(.urbanist(lerp(from, 44), .light)).tracking(lerp(0, -1.6))
+        .font(.urbanist(44, .light)).tracking(-1.6)
         .fixedSize()
+        .scaleEffect(scale, anchor: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(money.full)
     }
@@ -214,6 +256,8 @@ private struct BlurFade: ViewModifier {
 
 extension AnyTransition {
     static let blurFade = AnyTransition.modifier(active: BlurFade(hidden: true), identity: BlurFade(hidden: false))
+    /// Troca de página do corpo do modal: só fade (blur numa lista inteira custa caro) e a altura segue a que entra.
+    static let page = AnyTransition.opacity.combined(with: .modifier(active: LeavingMark(on: true), identity: LeavingMark(on: false)))
 }
 
 extension View {

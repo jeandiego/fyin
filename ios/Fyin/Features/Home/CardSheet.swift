@@ -70,9 +70,9 @@ struct CardSheet: View {
                 ZStack(alignment: .top) {
                     billLines(bill).dragged(drag, dragOpacity).id("\(card.id)·\(bill.period)").transition(shift)
                 }
-                .transition(.blurFade)
+                .transition(.page)
             } else {
-                cardsPage.transition(.blurFade)
+                cardsPage.transition(.page)
             }
         } footer: {
             if let card, let period { detailsButton(card, period).transition(.blurFade) }
@@ -175,7 +175,8 @@ struct CardSheet: View {
                         .padding(.bottom, 12)
                 }
             }
-            .blurFade(!open)
+            // Só fade: o blur de 4px fica no topo; numa lista inteira ele pesava a cada frame da abertura.
+            .opacity(open ? 1 : 0)
             .animation(open && !reduceMotion ? Motion.spring(Motion.considered).delay(Motion.considered * 0.3) : Motion.standard(Motion.instant), value: open)
         }
     }
@@ -540,15 +541,15 @@ struct CardSheet: View {
         .padding(EdgeInsets(top: 8, leading: 20, bottom: 20, trailing: 20))
     }
 
-    /// Paginação do quadro 13 (motion/screen, 400ms). O que sai continua de onde o dedo o deixou, mais 16pt, e some
-    /// em 70% do tempo na curva padrão; o que entra vem 16pt do outro lado na curva de entrada, um instante depois,
-    /// cruzando com a saída. Com Reduce Motion, só crossfade.
+    /// Paginação do quadro 17 (12px + fade) no tempo do quadro 13 (motion/screen, nada passa de 400ms). O que sai
+    /// continua de onde o dedo o deixou, mais 12pt, e some em 70% do tempo na curva padrão; o que entra vem 12pt do
+    /// outro lado na curva de entrada, um instante depois, cruzando com a saída e terminando nos 400ms. Com Reduce Motion, só crossfade.
     private var shift: AnyTransition {
         guard !reduceMotion else { return .opacity.animation(Motion.standard(Motion.quick)) }
-        let d: CGFloat = forward ? 16 : -16
+        let d: CGFloat = forward ? 12 : -12
         return .asymmetric(
             insertion: .offset(x: d).combined(with: .opacity)
-                .animation(Motion.enter(Motion.screen).delay(Motion.screen * 0.12)),
+                .animation(Motion.enter(Motion.screen * 0.88).delay(Motion.screen * 0.12)),
             removal: .offset(x: -d).combined(with: .opacity)
                 .animation(Motion.standard(Motion.screen * 0.7)))
     }
@@ -559,7 +560,7 @@ struct CardSheet: View {
     }
 
     /// No arrasto o conteúdo esmaece até 55%: a troca se anuncia antes de acontecer.
-    private var dragOpacity: Double { 1 - min(0.45, abs(drag) / 140) }
+    private var dragOpacity: Double { 1 - min(0.45, abs(drag) / 93) }
 
     // A direção trava nos primeiros 8pt (lateral só se dx > 1,2·dy), para não brigar com a rolagem dos lançamentos.
     // Segue o dedo com resistência (borracha nas pontas) e decide na soltura por distância ou velocidade.
@@ -572,7 +573,9 @@ struct CardSheet: View {
                 let towards = dx < 0 ? 1 : -1
                 // A direção já entra na transição durante o arrasto: na soltura a troca é imediata.
                 if forward != (towards > 0) { forward = towards > 0 }
-                drag = reduceMotion ? 0 : dx * (neighbor(towards) == nil ? 0.12 : 0.35)
+                // Quadro 17: o conteúdo acompanha até 42pt (borracha de 16pt nas pontas), nunca até a borda do modal.
+                let reach: CGFloat = neighbor(towards) == nil ? 16 : 42
+                drag = reduceMotion ? 0 : reach * tanh(dx * (neighbor(towards) == nil ? 0.12 : 0.35) / reach)
             }
             .onEnded { v in
                 defer { lateral = nil }
