@@ -218,6 +218,7 @@ struct HomeView: View {
                               properties: .position, anchor: .leading)
                 }
                 .opacity(presented == .portfolio && !reduceMotion ? 0 : 1)
+                .animation(nil, value: presented) // volta por baixo do modal, que é quem esmaece
                 .skeleton(loading, dark: true)
                 Spacer()
             }
@@ -381,6 +382,7 @@ struct HomeView: View {
                 slot(value).font(.urbanist(24, .light)).foregroundStyle(Color.qInk)
                     .hero(CardsHero.value, in: hero, isSource: morph != source, enabled: heroes, properties: .position, anchor: .leading)
                     .opacity(away ? 0 : 1)
+                    .animation(nil, value: presented)
                 Text(sub).font(.urbanist(12)).foregroundStyle(Color.qText3)
                     .contentTransition(.opacity)
                     .animation(Motion.standard(Motion.base), value: sub)
@@ -403,6 +405,7 @@ struct HomeView: View {
             Text(title).font(.urbanist(14)).foregroundStyle(Color.qText3)
                 .hero(id ?? "", in: hero, isSource: morph != .cards, enabled: id != nil)
                 .opacity(hidden ? 0 : 1)
+                .animation(nil, value: presented)
                 .skeleton(loading)
             Spacer()
             if let since, !loading {
@@ -434,11 +437,10 @@ struct HomeView: View {
         withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base)) {
             morph = nil
         } completion: {
-            // Recolhido, o valor do modal é idêntico ao do card; espera os rolos do filtro pousarem antes de trocar.
-            Task {
-                try? await Task.sleep(for: .seconds(1))
-                if morph == nil, close == closes { presented = nil }
-            }
+            // Recolhido, o modal tem a cara do card: um crossfade curto devolve subtítulo e seta sem salto.
+            // Os rolos do filtro, se ainda girando, somem no fade; o card já mostra o total final.
+            guard morph == nil, close == closes else { return }
+            withAnimation(Motion.standard(Motion.quick)) { presented = nil }
         }
     }
 

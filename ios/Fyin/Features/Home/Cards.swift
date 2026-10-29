@@ -66,15 +66,13 @@ extension CardsOverview.Card {
     /// "Jean · final 4821".
     var holder: String { last4.map { "\(ownerName) · final \($0)" } ?? ownerName }
 
-    /// "Jan 2027" só quando a fatura cai em outro ano que a atual.
-    func pill(_ period: String) -> String {
-        period.prefix(4) == current.prefix(4) ? MonthLabel.short(period) : "\(MonthLabel.short(period)) \(period.prefix(4))"
-    }
+    /// A fatura deste período, ou a atual se o cartão não tem fatura nele (troca de cartão mantém o mês).
+    func period(keeping period: String?) -> String { period.flatMap { bill($0)?.period } ?? current }
 
-    /// "Fatura de janeiro de 2027 · já lançado".
-    func title(_ bill: CardsOverview.Bill) -> String {
-        let year = bill.period.prefix(4) == current.prefix(4) ? "" : " de \(bill.period.prefix(4))"
-        return "Fatura de \(MonthLabel.long(bill.period))\(year)\(bill.status == .future ? " · já lançado" : "")"
+    /// A atual quando é mais antiga que `period` e ainda tem saldo: o modal avisa e leva até ela.
+    func pending(before period: String) -> CardsOverview.Bill? {
+        guard current < period, let bill = currentBill, bill.status == .closed || bill.status == .overdue else { return nil }
+        return bill
     }
 }
 
@@ -90,16 +88,30 @@ extension CardsOverview.Bill {
         }
     }
 
-    /// Cor só no ponto; o texto ao lado diz o que houve.
+    /// "Novembro 2026" no seletor de fatura.
+    var month: String { "\(MonthLabel.long(period).capitalized(with: PortfolioKind.ptBR)) \(period.prefix(4))" }
+
+    /// Cor só no ponto; o texto ao lado diz o que houve. Sobre q/card, o tom do modal inteiro.
     var dot: Color {
         switch status {
-        case .paid, .partial: .qAccent
+        case .paid, .partial: .qOk
         case .closed: .qWarn
         case .overdue: .qOver
-        case .open: .qOnDark2
-        case .future: .qOnDark3
+        case .open, .future: .qText2
         }
     }
+
+    /// Opção do seletor: "Paga em 25 ago", "Vencida · venceu 25 out", "Futura · vence 25 dez".
+    var short: String {
+        switch status {
+        case .paid: paidOn.map { "Paga em \(MonthLabel.day($0))" } ?? "Paga"
+        case .partial: "Paga em parte · \(paid.full)"
+        default: "\(label) · \(due)"
+        }
+    }
+
+    /// "Fechada · novembro · vence 3 nov · R$ 842,15".
+    var pendingLine: String { "\(label) · \(MonthLabel.long(period)) · \(due) · \(total.full)" }
 
     /// Linha do cartão na lista: "vence 10 nov" ou "venceu 25 out".
     var due: String { "\(status == .overdue ? "venceu" : "vence") \(MonthLabel.day(dueDate))" }
