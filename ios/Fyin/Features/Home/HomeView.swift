@@ -26,24 +26,31 @@ struct HomeView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        balanceCard(safeTop: geo.safeAreaInsets.top)
-                        monthCards.padding(.horizontal, 12)
+                // Desfoque leve sob o modal (quadro 16 usa 6; aqui um pouco mais), na mesma mola do morph.
+                // O blur é opaco para as bordas não ficarem transparentes (senão o fundo vaza como brilho).
+                // Blur opaco divide cada pixel pelo alfa e fica indefinido (preto) onde a entrada não é opaca,
+                // então tudo o que ele cobre precisa ser opaco: o fundo branco ocupa a área inteira e o
+                // compositingGroup junta fundo e rolagem (que é outra camada) num só buffer antes do blur.
+                // A borda do blur fica fora da tela: a camada desfocada tem 32pt a mais de cada lado
+                // (a rolagem volta ao tamanho da tela por dentro) e ignora a safe area.
+                ZStack {
+                    Color.qBg
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            balanceCard(safeTop: geo.safeAreaInsets.top)
+                            monthCards.padding(.horizontal, 12)
+                        }
+                        .padding(.bottom, 20 + geo.safeAreaInsets.bottom)
                     }
-                    .padding(.bottom, 20)
-                    // Fundo no próprio conteúdo: o blur opaco age na camada do conteúdo da rolagem e
-                    // pintaria de preto o que nela é transparente (vãos entre os cards e abaixo deles).
-                    .background(Color.qBg)
+                    .scrollEdgeEffectHidden(true, for: .top)
+                    .refreshable { await model.refresh() }
+                    .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
+                    .padding(32)
                 }
-                .scrollEdgeEffectHidden(true, for: .top)
-                .refreshable { await model.refresh() }
-                .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
-                // Desfoque leve (quadro 16 usa 6; aqui um pouco mais) na mesma mola do morph, chegando junto com o modal.
-                // opaque: as bordas não ficam transparentes, então o fundo branco não vaza como brilho em volta.
-                // Vem antes do ignoresSafeArea para o recorte do blur cobrir também a status bar.
+                .compositingGroup()
                 .blur(radius: morph != nil ? 10 : 0, opaque: true)
-                .ignoresSafeArea(edges: [.top, .horizontal])
+                .padding(-32)
+                .ignoresSafeArea()
                 .accessibilityHidden(morph != nil)
 
                 Color.qScrim.ignoresSafeArea()
