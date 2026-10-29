@@ -26,6 +26,7 @@ struct PortfolioSheet: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = PortfolioPage.accounts
     @State private var owner: String?
+    @State private var currency = DisplayCurrency.brl
     @State private var bodyHeight: CGFloat = 0
     @State private var scroll = ScrollPosition(edge: .top)
     @State private var accountsY: CGFloat = 0
@@ -70,12 +71,14 @@ struct PortfolioSheet: View {
                 .hero(PortfolioHero.shell, in: hero, isSource: open, enabled: !reduceMotion)
         }
         .sensoryFeedback(.selection, trigger: owner)
+        .sensoryFeedback(.selection, trigger: currency)
         .sensoryFeedback(.selection, trigger: page)
         .accessibilityAddTraits(.isModal)
         .accessibilityAction(.escape) { escape() }
         .onChange(of: open) { _, isOpen in
             guard !isOpen else { return }
             if page != .accounts { page = .accounts; scroll.scrollTo(edge: .top) }
+            currency = .brl
             // O valor pousa na linha da home, que mostra o total de todos: com filtro, os rolos giram de volta
             // enquanto o modal encolhe, em vez de o número trocar de uma vez no pouso.
             if owner != nil { withAnimation(Motion.spring(Motion.base)) { owner = nil } }
@@ -228,7 +231,10 @@ struct PortfolioSheet: View {
     // MARK: Detalhe
 
     private func detailPage(_ account: Portfolio.Account) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Conta sem dólar (ou sem cotação) ignora a escolha: nada a alternar.
+        let dollar = account.hasDollar(rate: portfolio.usdRate)
+        let shownCurrency = dollar ? currency : .brl
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 InstitutionAvatar(institution: account.institution, size: 48)
                     .hero("\(account.id).avatar", in: hero, enabled: !reduceMotion)
@@ -243,33 +249,60 @@ struct PortfolioSheet: View {
             .padding(EdgeInsets(top: 14, leading: 20, bottom: 0, trailing: 20))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Total investido").font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
-                amount(account.total, size: 36, currency: 16)
-                    .hero("\(account.id).value", in: hero, enabled: !reduceMotion)
+                HStack {
+                    Text("Total investido").font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
+                    Spacer()
+                    if dollar { currencyToggle }
+                }
+                // Uma só instância nos dois modos: os rolos giram do valor em reais para o em dólar.
+                let usd = shownCurrency == .usd ? account.totalUsd : nil
+                amount(usd ?? account.total, symbol: usd == nil ? "R$ " : "US$ ", size: 36, currency: 16)
+                    .hero("\(account.id).value", in: hero, enabled: !reduceMotion, properties: .position, anchor: .leading)
                 Text("\(PortfolioKind.share(account.total, of: portfolio.total)) do patrimônio · \(positions(account.positionCount))")
                     .font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
+                if dollar, let rate = portfolio.usdRate.flatMap(PortfolioKind.decimal) {
+                    Text(rateNote(rate))
+                        .font(.urbanist(12)).foregroundStyle(Color.qOnDark3)
+                }
             }
             .padding(EdgeInsets(top: 18, leading: 20, bottom: 0, trailing: 20))
 
-            ForEach(account.groups, id: \.kind) { group($0, in: account) }
+            ForEach(account.groups, id: \.kind) { group($0, in: account, currency: shownCurrency) }
             Color.clear.frame(height: 20)
         }
     }
 
     private func positions(_ n: Int) -> String { n == 1 ? "1 posição" : "\(n) posições" }
 
-    private func group(_ group: Portfolio.Group, in account: Portfolio.Account) -> some View {
+    // "R$ | US$": reais é o padrão e o dólar é a leitura original da corretora.
+    private var currencyToggle: some View {
+        SegmentedSwitch(options: [DisplayCurrency.brl, .usd], selection: $currency, label: "Moeda") { $0 == .brl ? "R$" : "US$" }
+    }
+
+    // "Convertido pela PTAX de 28 out · US$ 1 = R$ 5,4512".
+    private func rateNote(_ rate: Decimal) -> String {
+        let day = portfolio.usdRateDate.map { " de \(MonthLabel.day($0))" } ?? ""
+        let value = rate.formatted(.number.precision(.fractionLength(4)).locale(PortfolioKind.ptBR))
+        return "Convertido pela PTAX\(day) · US$ 1 = R$ \(value)"
+    }
+
+    private func group(_ group: Portfolio.Group, in account: Portfolio.Account, currency: DisplayCurrency) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("\(Text(PortfolioKind.label(group.kind)).font(.urbanist(13, .semibold)).foregroundStyle(.white)) · \(group.positions.count)")
                     .font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
                 Spacer()
-                Text("\(group.total.full) · \(PortfolioKind.share(group.total, of: account.total))")
-                    .font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
+                let usd = currency == .usd ? group.totalUsd : nil
+                let total = usd ?? group.total
+                HStack(spacing: 0) {
+                    SlotText(text: usd == nil ? total.full : total.fullUsd, value: total.value)
+                    Text(" · \(PortfolioKind.share(group.total, of: account.total))")
+                }
+                .font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
             }
             .padding(.bottom, 4)
             ForEach(Array(group.positions.enumerated()), id: \.offset) { i, position in
-                positionRow(position, label: PortfolioKind.label(group.kind), in: account)
+                positionRow(position, label: PortfolioKind.label(group.kind), in: account, currency: currency)
                     .overlay(alignment: .bottom) {
                         if i < group.positions.count - 1 { Rectangle().fill(Color.qOnDarkLine).frame(height: 1) }
                     }
@@ -278,7 +311,7 @@ struct PortfolioSheet: View {
         .padding(EdgeInsets(top: 18, leading: 20, bottom: 0, trailing: 20))
     }
 
-    private func positionRow(_ p: Portfolio.Position, label: String, in account: Portfolio.Account) -> some View {
+    private func positionRow(_ p: Portfolio.Position, label: String, in account: Portfolio.Account, currency: DisplayCurrency) -> some View {
         VStack(spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -290,7 +323,8 @@ struct PortfolioSheet: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(p.balance.full).font(.urbanist(15)).tracking(-0.2).foregroundStyle(.white)
+                    SlotText(text: p.value(currency), value: p.amount(currency).value)
+                        .font(.urbanist(15)).tracking(-0.2).foregroundStyle(.white)
                     Text(PortfolioKind.share(p.balance, of: account.total)).font(.urbanist(12)).foregroundStyle(Color.qOnDark3)
                 }
             }
@@ -307,14 +341,19 @@ struct PortfolioSheet: View {
         .accessibilityElement(children: .combine)
     }
 
-    // "R$ 358.041,65": centavos e moeda esmaecidos. Um Text só, para encolher inteiro enquanto viaja da linha.
-    private func amount(_ money: Money, size: CGFloat, currency: CGFloat) -> some View {
+    // "R$ 358.041,65": centavos e moeda esmaecidos. Os dígitos são SlotText: trocar R$ por US$ gira os rolos,
+    // como o filtro de titular.
+    private func amount(_ money: Money, symbol: String, size: CGFloat, currency: CGFloat) -> some View {
         let parts = money.split
-        return Text("\(Text("R$ ").font(.urbanist(currency, .light)).foregroundStyle(Color.qOnDark3))\(Text(parts.whole).foregroundStyle(.white))\(Text(parts.cents).foregroundStyle(Color.qOnDark3))")
-            .font(.urbanist(size, .light)).tracking(size * -0.036)
-            .lineLimit(1).minimumScaleFactor(0.3)
-            .contentTransition(.opacity)
-            .accessibilityLabel(money.full)
+        return HStack(alignment: .lastTextBaseline, spacing: 0) {
+            Text(symbol).font(.urbanist(currency, .light)).foregroundStyle(Color.qOnDark3)
+            SlotText(text: parts.whole, value: money.value).foregroundStyle(.white)
+            SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count).foregroundStyle(Color.qOnDark3)
+        }
+        .font(.urbanist(size, .light)).tracking(size * -0.036)
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(symbol == "R$ " ? money.full : money.fullUsd)
     }
 
     // MARK: Ações

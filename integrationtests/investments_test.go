@@ -61,7 +61,7 @@ func TestInvestments_SplitsByOwnerAndProductAndMatchesHomeTotal(t *testing.T) {
 	assert.Equal(t, "13700.50", got["total"])
 	assert.Equal(t, home["invested"], got["total"], "o detalhe soma o mesmo que a home")
 	pos := func(name, balance string, extra map[string]any) map[string]any {
-		p := map[string]any{"name": name, "balance": balance, "currency": "BRL", "code": nil, "quantity": nil,
+		p := map[string]any{"name": name, "balance": balance, "balanceOriginal": balance, "currency": "BRL", "code": nil, "quantity": nil,
 			"indexer": nil, "rate": nil, "fixedRate": nil, "dueDate": nil, "taxExempt": nil}
 		for k, v := range extra {
 			p[k] = v
@@ -87,4 +87,34 @@ func TestInvestments_SplitsByOwnerAndProductAndMatchesHomeTotal(t *testing.T) {
 					map[string]any{"indexer": "CDI", "rate": "115.00"})}},
 			}},
 	}, got["accounts"])
+}
+
+func TestInvestments_ConvertsDollarPositionsWithLatestRate(t *testing.T) {
+	t.Parallel()
+	pool := testdb.New(t)
+	exec(t, pool, `
+		INSERT INTO items (id, owner, connector, status) VALUES ('77777777-7777-4777-8777-777777777777', 'ana', 'Avenue', 'UPDATED');
+		INSERT INTO accounts (id, item_id, type, subtype, name, balance, raw) VALUES
+			('88888888-8888-4888-8888-888888888888', '77777777-7777-4777-8777-777777777777', 'BANK', 'CHECKING_ACCOUNT', 'Conta', 50.00, '{"currencyCode":"USD"}');
+		INSERT INTO balance_snapshots VALUES ('88888888-8888-4888-8888-888888888888', '2026-10-27T12:00:00Z', 50.00);
+		INSERT INTO investments VALUES
+			(gen_random_uuid(), '77777777-7777-4777-8777-777777777777', 'ETF', 'SPY', 'ACTIVE', 100.00, '{"subtype":"ETF","currencyCode":"USD"}'),
+			(gen_random_uuid(), '77777777-7777-4777-8777-777777777777', 'EQUITY', 'MSFT', 'ACTIVE', 50.01, '{"subtype":"STOCK","currencyCode":"USD"}');
+		INSERT INTO fx_rates (day, usd_brl) VALUES ('2026-10-27', 5.0000), ('2026-10-28', 5.4512);`)
+
+	_, got := getInvestments(t, pool)
+	_, home := getHome(t, pool, "")
+
+	// 100.00 × 5.4512 = 545.12 e 50.01 × 5.4512 = 272.61 (arredondado por posição); conta de US$ 50 = 272.56
+	assert.Equal(t, "817.73", got["total"])
+	assert.Equal(t, "5.4512", got["usdRate"])
+	assert.Equal(t, "2026-10-28", got["usdRateDate"])
+	acc := got["accounts"].([]any)[0].(map[string]any)
+	assert.Equal(t, "150.01", acc["totalUsd"])
+	first := acc["groups"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)
+	assert.Equal(t, "545.12", first["balance"])
+	assert.Equal(t, "100.00", first["balanceOriginal"])
+	assert.Equal(t, "USD", first["currency"])
+	assert.Equal(t, "272.56", home["balance"], "a conta em dólar também entra convertida")
+	assert.Equal(t, got["total"], home["invested"])
 }

@@ -9,18 +9,24 @@ struct Portfolio: Decodable, Equatable, Sendable {
         /// Ativo declarado à mão: só a linha, sem detalhe.
         let manual: Bool
         let total: Money
+        /// Soma das posições em dólar, na moeda original; nil se a conta não tem dólar.
+        var totalUsd: Money? = nil
         let groups: [Group]
     }
 
     struct Group: Decodable, Equatable, Sendable {
         let kind: String
         let total: Money
+        var totalUsd: Money? = nil
         let positions: [Position]
     }
 
     struct Position: Decodable, Equatable, Sendable {
         let name: String
+        /// Em reais (já convertido pela PTAX se a posição é em dólar).
         let balance: Money
+        /// Na moeda da posição (`currency`).
+        let balanceOriginal: Money
         let currency: String
         let code: String?
         let quantity: String?
@@ -32,6 +38,9 @@ struct Portfolio: Decodable, Equatable, Sendable {
     }
 
     let total: Money
+    /// PTAX usada nas conversões ("5.4512") e seu dia; nil enquanto o backend não tem cotação.
+    var usdRate: String? = nil
+    var usdRateDate: String? = nil
     let accounts: [Account]
 }
 
@@ -55,6 +64,9 @@ extension Portfolio.Account {
         let kinds = manual ? ["Bem declarado"] : groups.prefix(2).map { PortfolioKind.label($0.kind) }
         return ([ownerName] + [kinds.joined(separator: " + ")]).joined(separator: " · ")
     }
+
+    /// Só oferece o seletor R$ / US$ se há dólar e cotação para explicar a conversão.
+    func hasDollar(rate: String?) -> Bool { totalUsd != nil && rate != nil }
 
     var positionCount: Int { groups.reduce(0) { $0 + $1.positions.count } }
 }
@@ -81,7 +93,19 @@ extension Portfolio.Position {
         if currency != "BRL" { parts.append(currency) }
         return parts.joined(separator: " · ")
     }
+
+    /// Valor na moeda pedida: em dólar, só posições em USD mudam; as demais seguem em reais.
+    func amount(_ currency: DisplayCurrency) -> Money {
+        currency == .usd && self.currency == "USD" ? balanceOriginal : balance
+    }
+
+    func value(_ currency: DisplayCurrency) -> String {
+        currency == .usd && self.currency == "USD" ? balanceOriginal.fullUsd : balance.full
+    }
 }
+
+/// Moeda de exibição do detalhe de uma conta com dólar; reais é o padrão.
+enum DisplayCurrency: Equatable { case brl, usd }
 
 enum PortfolioKind {
     static let ptBR = Locale(identifier: "pt_BR")

@@ -22,6 +22,9 @@ struct Money: Decodable, Equatable, Sendable {
     /// "R$ 6.240,30", com centavos (listas).
     var full: String { "R$ " + value.formatted(.number.precision(.fractionLength(2)).locale(Self.ptBR)) }
 
+    /// "US$ 1.234,56": valor em dólar de corretora internacional.
+    var fullUsd: String { "US$ " + value.formatted(.number.precision(.fractionLength(2)).locale(Self.ptBR)) }
+
     /// ("24.318", ",52"), para o saldo com centavos esmaecidos.
     var split: (whole: String, cents: String) {
         let text = value.formatted(.number.precision(.fractionLength(2)).locale(Self.ptBR))

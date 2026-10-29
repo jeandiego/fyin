@@ -14,12 +14,13 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
 // figures preenche os campos de s que vêm do banco, para o mês [start, end).
 // O saldo das contas é o de `end`: parte do snapshot mais próximo e desfaz/aplica as transações até lá.
+// Valores em USD entram convertidos pela cotação mais recente (to_brl).
 // Investido = investimentos + ativos manuais + caixinhas/reservas das contas (bankData.reservedBalances, fora do saldo).
 // Empréstimos e investimentos são sempre os atuais (a Pluggy não dá histórico).
 func (st *Store) figures(ctx context.Context, start, end time.Time, s *Summary) error {
 	return st.pool.QueryRow(ctx, `
 		WITH bank AS (
-			SELECT coalesce(
+			SELECT to_brl(coalesce(
 				(SELECT sn.balance - coalesce((SELECT sum(t.amount) FROM transactions t
 					WHERE t.account_id = a.id AND t.date >= $2 AND t.date <= sn.taken_at), 0)
 				 FROM balance_snapshots sn WHERE sn.account_id = a.id AND sn.taken_at >= $2
@@ -28,7 +29,7 @@ func (st *Store) figures(ctx context.Context, start, end time.Time, s *Summary) 
 					WHERE t.account_id = a.id AND t.date > sn.taken_at AND t.date < $2), 0)
 				 FROM balance_snapshots sn WHERE sn.account_id = a.id AND sn.taken_at < $2
 				 ORDER BY sn.taken_at DESC LIMIT 1)
-			) AS balance
+			), a.raw->>'currencyCode') AS balance
 			FROM accounts a WHERE a.type = 'BANK'
 		), last_bills AS (
 			-- última fatura fechada até o fim do mês, por cartão
@@ -39,10 +40,10 @@ func (st *Store) figures(ctx context.Context, start, end time.Time, s *Summary) 
 		SELECT
 			(SELECT max(synced_at) FROM items),
 			(SELECT coalesce(sum(balance), 0)::numeric(14,2)::text FROM bank),
-			(SELECT (coalesce((SELECT sum(balance) FROM investments WHERE status IS DISTINCT FROM 'TOTAL_WITHDRAWAL'), 0)
+			(SELECT (coalesce((SELECT sum(to_brl(balance, raw->>'currencyCode')) FROM investments WHERE status IS DISTINCT FROM 'TOTAL_WITHDRAWAL'), 0)
 			       + coalesce((SELECT sum(value) FROM manual_assets), 0)
-			       + coalesce((SELECT sum(amt::numeric) FROM accounts a,
-			           jsonb_path_query(a.raw, '$.bankData.reservedBalances[*].availableAmounts[*].amount') amt
+			       + coalesce((SELECT sum(to_brl((amt->>'amount')::numeric, amt->>'currencyCode')) FROM accounts a,
+			           jsonb_path_query(a.raw, '$.bankData.reservedBalances[*].availableAmounts[*]') amt
 			           WHERE a.type = 'BANK'), 0))::numeric(14,2)::text),
 			(SELECT coalesce(sum(amount), 0)::numeric(14,2)::text FROM spending WHERE date >= $1 AND date < $2),
 			(SELECT coalesce(sum(total), 0)::numeric(14,2)::text FROM last_bills),
