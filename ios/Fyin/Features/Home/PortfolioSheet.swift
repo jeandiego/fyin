@@ -31,6 +31,23 @@ struct PortfolioSheet: View {
     @State private var scroll = ScrollPosition(edge: .top)
     @State private var accountsY: CGFloat = 0
     @State private var topHeight: CGFloat = 60
+    @State private var edges = ScrollEdges()
+
+    /// Lado da rolagem com mais conteúdo além da borda: só ali o fade aparece.
+    private struct ScrollEdges: Equatable {
+        var top = false
+        var bottom = false
+    }
+
+    // Fade discreto nas bordas da rolagem (16pt em cima, 28pt embaixo) para o texto não terminar em corte seco.
+    private var scrollFade: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [.black.opacity(edges.top ? 0 : 1), .black], startPoint: .top, endPoint: .bottom).frame(height: 16)
+            Color.black
+            LinearGradient(colors: [.black, .black.opacity(edges.bottom ? 0 : 1)], startPoint: .top, endPoint: .bottom).frame(height: 28)
+        }
+        .animation(Motion.standard(Motion.quick), value: edges)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,7 +77,13 @@ struct PortfolioSheet: View {
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
                 if page == .accounts { accountsY = y }
             }
+            .onScrollGeometryChange(for: ScrollEdges.self) {
+                ScrollEdges(top: $0.contentOffset.y > 1, bottom: $0.contentOffset.y + $0.containerSize.height < $0.contentSize.height - 1)
+            } action: { _, new in edges = new }
             .frame(height: min(bodyHeight, max(maxHeight - topHeight, 0)))
+            // O conteúdo nunca passa da forma do modal: cantos de baixo concêntricos aos do aparelho, topo reto.
+            .clipShape(ConcentricRectangle(corners: .concentric(minimum: .fixed(0)), isUniform: false))
+            .mask { scrollFade }
         }
         .background {
             // Cantos de baixo concêntricos aos do aparelho; os de cima, longe deles, ficam nos 28 do design.
