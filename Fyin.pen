@@ -61570,7 +61570,7 @@
                               "fill": "$q/text-2",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "A linha (32, 433 · 338×60 · raio 0) vira o modal (12 · 378 × altura do conteúdo · raio 28), ancorado na base a 12pt, a mesma margem das laterais. Scrim 0 → 35% com blur 6. Rótulo e valor viajam; filtro e lista entram com fade e blur 4px depois de 30% do trajeto.",
+                              "content": "A linha (32, 433 · 338×60 · raio 0) vira o modal (12 · 378 × altura do conteúdo · raio 43), ancorado na base a 12pt, a mesma margem das laterais. O raio é concêntrico ao canto do aparelho (55 − 12 = 43). Scrim 0 → 35% com blur 6. Rótulo e valor viajam; filtro e lista entram com fade e blur 4px depois de 30% do trajeto.",
                               "lineHeight": 1.45,
                               "fontFamily": "$q/font",
                               "fontSize": 14,
@@ -61708,7 +61708,7 @@
                               "fill": "$q/text-2",
                               "textGrowth": "fixed-width",
                               "width": "fill_container",
-                              "content": "Avatar 40 → 48, nome 15 → 22 e valor 15 → 36 viajam da linha para o topo. A base continua presa e o topo acompanha o conteúdo; acima de 800pt (status bar → base) o conteúdo rola dentro do modal.",
+                              "content": "Avatar 40 → 48, nome 15 → 22 e valor 15 → 36 viajam da linha para o topo. A base continua presa e o topo acompanha o conteúdo; acima de 800pt (status bar → base) o conteúdo rola dentro do modal, recortado no canto do modal, com fade de 16pt no topo e 28pt na base só onde ainda há conteúdo.",
                               "lineHeight": 1.45,
                               "fontFamily": "$q/font",
                               "fontSize": 14,
@@ -62870,7 +62870,7 @@
                           "width": 357,
                           "height": 348,
                           "fill": "$q/ink",
-                          "cornerRadius": 13,
+                          "cornerRadius": 21,
                           "stroke": "#FFFFFF0F",
                           "strokeWidth": 1,
                           "effect": {
@@ -63927,7 +63927,7 @@
                         },
                         {
                           "type": "rectangle",
-                          "cornerRadius": 28,
+                          "cornerRadius": 43,
                           "id": "ZMRzQ",
                           "layoutPosition": "absolute",
                           "x": 12,
@@ -64162,7 +64162,7 @@
                           "clip": true,
                           "width": 378,
                           "fill": "$q/ink",
-                          "cornerRadius": 28,
+                          "cornerRadius": 43,
                           "stroke": "$q/on-dark-line",
                           "strokeWidth": 1,
                           "effect": {
@@ -65412,7 +65412,7 @@
                           "clip": true,
                           "width": 378,
                           "fill": "$q/ink",
-                          "cornerRadius": 28,
+                          "cornerRadius": 43,
                           "stroke": "$q/on-dark-line",
                           "strokeWidth": 1,
                           "effect": {
@@ -66042,7 +66042,7 @@
                           "clip": true,
                           "width": 378,
                           "fill": "$q/ink",
-                          "cornerRadius": 28,
+                          "cornerRadius": 43,
                           "stroke": "$q/on-dark-line",
                           "strokeWidth": 1,
                           "effect": {
@@ -67047,7 +67047,7 @@
                           "clip": true,
                           "width": 378,
                           "fill": "$q/ink",
-                          "cornerRadius": 28,
+                          "cornerRadius": 43,
                           "stroke": "$q/on-dark-line",
                           "strokeWidth": 1,
                           "effect": {
@@ -67837,7 +67837,7 @@
                           "clip": true,
                           "width": 378,
                           "fill": "$q/ink",
-                          "cornerRadius": 28,
+                          "cornerRadius": 43,
                           "stroke": "$q/on-dark-line",
                           "strokeWidth": 1,
                           "effect": {
@@ -69024,7 +69024,7 @@
                           "clip": true,
                           "width": 378,
                           "fill": "$q/ink",
-                          "cornerRadius": 28,
+                          "cornerRadius": 43,
                           "stroke": "$q/on-dark-line",
                           "strokeWidth": 1,
                           "effect": {
@@ -70086,7 +70086,7 @@
                           "width": 378,
                           "height": 800,
                           "fill": "$q/ink",
-                          "cornerRadius": 28,
+                          "cornerRadius": 43,
                           "stroke": "$q/on-dark-line",
                           "strokeWidth": 1,
                           "effect": {
@@ -71139,6 +71139,35 @@
                               "name": "End",
                               "width": "fill_container",
                               "height": 20
+                            },
+                            {
+                              "type": "rectangle",
+                              "id": "Sfd6Y",
+                              "layoutPosition": "absolute",
+                              "x": 0,
+                              "y": 772,
+                              "name": "Fade · rolagem · base",
+                              "fill": {
+                                "type": "gradient",
+                                "gradientType": "linear",
+                                "enabled": true,
+                                "rotation": 180,
+                                "size": {
+                                  "height": 1
+                                },
+                                "colors": [
+                                  {
+                                    "color": "#16161600",
+                                    "position": 0
+                                  },
+                                  {
+                                    "color": "#161616",
+                                    "position": 1
+                                  }
+                                ]
+                              },
+                              "width": 378,
+                              "height": 28
                             }
                           ]
                         }
