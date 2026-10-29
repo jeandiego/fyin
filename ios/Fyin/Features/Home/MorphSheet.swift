@@ -111,19 +111,24 @@ struct MorphIconButton: View {
     }
 }
 
-/// Filter Pill sobre o modal escuro: escolhida em lime.
+/// Filter Pill do modal. Escuro: escolhida em lime. Claro (q/card): brancas, escolhida em q/ink.
 struct MorphPill: View {
     let title: String
     let selected: Bool
+    var light = false
     let action: () -> Void
+
+    private var fill: Color { light ? (selected ? .qInk : .white) : (selected ? .qAccent : .clear) }
+    private var ink: Color { light ? (selected ? .white : .qInk) : (selected ? .qInk : .white.opacity(0.7)) }
+    private var line: Color { light ? (selected ? .qInk : .qLine) : (selected ? .qAccent : .white.opacity(0.16)) }
 
     var body: some View {
         Button(action: action) {
-            Text(title).font(.urbanist(13))
-            .foregroundStyle(selected ? Color.qInk : .white.opacity(0.7))
+            Text(title).font(.urbanist(13, light && selected ? .semibold : .medium))
+            .foregroundStyle(ink)
             .padding(.horizontal, 14).frame(height: 32)
-            .background(Capsule().fill(selected ? Color.qAccent : .clear))
-            .overlay(Capsule().stroke(selected ? Color.qAccent : .white.opacity(0.16)))
+            .background(Capsule().fill(fill))
+            .overlay(Capsule().stroke(line))
             .animation(Motion.standard(Motion.quick), value: selected)
             .contentShape(Capsule())
         }
@@ -140,6 +145,8 @@ struct MorphTotal: View, Animatable {
     var progress: Double
     var from: CGFloat = 22
     var ink = Color.white
+    /// Tinta aberta: branco no modal escuro, q/ink no claro.
+    var to = Color.white
 
     var animatableData: Double {
         get { progress }
@@ -150,12 +157,12 @@ struct MorphTotal: View, Animatable {
 
     var body: some View {
         let parts = money.split
-        let tint = ink.mix(with: .white, by: progress)
+        let tint = ink.mix(with: to, by: progress)
         HStack(alignment: .lastTextBaseline, spacing: 0) {
             Text("R$ ").font(.urbanist(lerp(from, 18), .light)).foregroundStyle(tint.opacity(lerp(1, 0.3)))
             SlotText(text: parts.whole, value: money.value).foregroundStyle(tint)
             SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count)
-                .foregroundStyle(.white.opacity(0.3)).opacity(progress)
+                .foregroundStyle(to.opacity(0.3)).opacity(progress)
         }
         .font(.urbanist(lerp(from, 44), .light)).tracking(lerp(0, -1.6))
         .fixedSize()

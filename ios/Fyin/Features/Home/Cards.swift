@@ -91,14 +91,13 @@ extension CardsOverview.Bill {
     /// "Novembro 2026" no seletor de fatura.
     var month: String { "\(MonthLabel.long(period).capitalized(with: PortfolioKind.ptBR)) \(period.prefix(4))" }
 
-    /// Cor só no ponto; o texto ao lado diz o que houve. Sobre o escuro (lista) ou o claro (fatura).
-    func dot(light: Bool = false) -> Color {
+    /// Cor só no ponto; o texto ao lado diz o que houve. Sobre q/card, o tom do modal inteiro.
+    var dot: Color {
         switch status {
-        case .paid, .partial: light ? .qOk : .qAccent
+        case .paid, .partial: .qOk
         case .closed: .qWarn
         case .overdue: .qOver
-        case .open: light ? .qText2 : .qOnDark2
-        case .future: light ? .qText2 : .qOnDark3
+        case .open, .future: .qText2
         }
     }
 

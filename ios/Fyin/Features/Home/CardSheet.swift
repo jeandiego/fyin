@@ -46,6 +46,8 @@ struct CardSheet: View {
     @State private var picking = false
     /// Arrasto lateral da fatura, já amortecido: troca de cartão ao soltar além de 64pt ou num flick.
     @State private var drag: CGFloat = 0
+    /// Direção do arrasto, decidida nos primeiros 8pt: horizontal troca de cartão, vertical fica com a rolagem.
+    @State private var lateral: Bool?
 
     private var card: CardsOverview.Card? {
         guard case .bill(let id) = page else { return nil }
@@ -54,12 +56,9 @@ struct CardSheet: View {
 
     private var bill: CardsOverview.Bill? { period.flatMap { card?.bill($0) } }
 
-    /// Lista sempre escura; a fatura abre sobre q/card.
-    private var light: Bool { card != nil && bill != nil }
-
     var body: some View {
         MorphSheet(open: open, hero: hero, shell: CardsHero.shell, maxHeight: maxHeight, closedFill: .qCard, closedRadius: 18,
-                   light: light, scroll: $scroll, onScroll: { if page == .cards { cardsY = $0 } }, escape: escape) {
+                   light: true, scroll: $scroll, onScroll: { if page == .cards { cardsY = $0 } }, escape: escape) {
             header
             if let card, let bill {
                 billTop(card, bill).transition(.blurFade)
@@ -68,10 +67,10 @@ struct CardSheet: View {
             }
         } content: {
             if let card, let bill {
-                ZStack(alignment: .top) { billLines(bill).id("\(card.id)·\(bill.period)").transition(shift) }
-                    .offset(x: drag)
-                    .opacity(dragOpacity)
-                    .transition(.blurFade)
+                ZStack(alignment: .top) {
+                    billLines(bill).dragged(drag, dragOpacity).id("\(card.id)·\(bill.period)").transition(shift)
+                }
+                .transition(.blurFade)
             } else {
                 cardsPage.transition(.blurFade)
             }
@@ -81,7 +80,7 @@ struct CardSheet: View {
         .overlay(alignment: .top) {
             if picking, let card, let bill { picker(card, chosen: bill).transition(pickerShift) }
         }
-        .simultaneousGesture(cardDrag, isEnabled: light && !picking)
+        .simultaneousGesture(cardDrag, isEnabled: bill != nil && !picking)
         .sensoryFeedback(.selection, trigger: owner)
         .sensoryFeedback(.selection, trigger: page)
         .sensoryFeedback(.selection, trigger: period)
@@ -99,12 +98,12 @@ struct CardSheet: View {
     private var header: some View {
         HStack {
             if page == .cards {
-                Text("Cartão").font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
+                Text("Cartão").font(.urbanist(13)).foregroundStyle(Color.qText2)
                     .hero(CardsHero.label, in: hero, isSource: open, enabled: !reduceMotion)
                     .padding(.top, 14)
                     .transition(.blurFade)
             } else {
-                MorphIconButton(symbol: "arrow.left", label: "Voltar", light: light, action: back).keyboardShortcut(.cancelAction)
+                MorphIconButton(symbol: "arrow.left", label: "Voltar", light: true, action: back).keyboardShortcut(.cancelAction)
                     .transition(.blurFade)
             }
             Spacer()
@@ -112,7 +111,7 @@ struct CardSheet: View {
                 selector(bill).transition(.blurFade)
                 Spacer()
             }
-            MorphIconButton(symbol: "xmark", label: "Fechar", light: light, action: close)
+            MorphIconButton(symbol: "xmark", label: "Fechar", light: true, action: close)
                 .keyboardShortcut(page == .cards ? .cancelAction : nil)
                 .blurFade(!open)
         }
@@ -128,9 +127,9 @@ struct CardSheet: View {
 
     private var cardsTotal: some View {
         VStack(alignment: .leading, spacing: 6) {
-            MorphTotal(money: shownTotal, progress: open ? 1 : 0, from: 24, ink: .qInk)
+            MorphTotal(money: shownTotal, progress: open ? 1 : 0, from: 24, ink: .qInk, to: .qInk)
                 .hero(CardsHero.value, in: hero, isSource: open, enabled: !reduceMotion, properties: .position, anchor: .leading)
-            Text(countLine).font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
+            Text(countLine).font(.urbanist(13)).foregroundStyle(Color.qText2)
                 .contentTransition(.opacity)
                 .blurFade(!open)
         }
@@ -159,7 +158,7 @@ struct CardSheet: View {
                             cardRow(card)
                                 .overlay(alignment: .bottom) {
                                     if card.id != shown.last?.id {
-                                        Rectangle().fill(Color.qOnDarkLine).frame(height: 1).padding(.leading, 72).padding(.trailing, 20)
+                                        Rectangle().fill(Color.qLine).frame(height: 1).padding(.leading, 72).padding(.trailing, 20)
                                     }
                                 }
                                 .transition(.opacity)
@@ -190,7 +189,7 @@ struct CardSheet: View {
     }
 
     private func filterPill(_ title: String, _ value: String?) -> some View {
-        MorphPill(title: title, selected: owner == value) {
+        MorphPill(title: title, selected: owner == value, light: true) {
             guard owner != value else { return }
             withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base + 0.04)) { owner = value }
         }
@@ -205,20 +204,20 @@ struct CardSheet: View {
                     .hero("\(card.id).avatar", in: hero, enabled: !reduceMotion)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(card.institution).font(.urbanist(15)).foregroundStyle(.white)
+                        Text(card.institution).font(.urbanist(15)).foregroundStyle(Color.qInk)
                             .hero("\(card.id).name", in: hero, enabled: !reduceMotion)
-                        Text(card.suffix).font(.urbanist(13)).foregroundStyle(Color.qOnDark3)
+                        Text(card.suffix).font(.urbanist(13)).foregroundStyle(Color.qText3)
                     }
-                    Text("\(card.ownerName) · \(bill?.due ?? "sem fatura")").font(.urbanist(12)).foregroundStyle(Color.qOnDark2)
+                    Text("\(card.ownerName) · \(bill?.due ?? "sem fatura")").font(.urbanist(12)).foregroundStyle(Color.qText2)
                 }
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text((bill?.total ?? Money(0)).full).font(.urbanist(15)).tracking(-0.2).foregroundStyle(.white)
+                    Text((bill?.total ?? Money(0)).full).font(.urbanist(15)).tracking(-0.2).foregroundStyle(Color.qInk)
                         .hero("\(card.id).value", in: hero, enabled: !reduceMotion)
                     if let bill { status(bill, size: 12) }
                 }
-                Image("chevron-right").resizable().frame(width: 16, height: 16).foregroundStyle(Color.qOnDark3)
+                Image("chevron-right").resizable().frame(width: 16, height: 16).foregroundStyle(Color.qText3)
             }
             .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 16))
             .frame(minHeight: 64)
@@ -228,21 +227,21 @@ struct CardSheet: View {
         .accessibilityHint("Abre a fatura atual do cartão")
     }
 
-    private func status(_ bill: CardsOverview.Bill, text: String? = nil, size: CGFloat, light: Bool = false) -> some View {
+    private func status(_ bill: CardsOverview.Bill, text: String? = nil, size: CGFloat) -> some View {
         HStack(spacing: 6) {
-            dot(bill, light: light)
-            Text(text ?? bill.label).font(.urbanist(size)).foregroundStyle(light ? Color.qText2 : Color.qOnDark2)
+            dot(bill)
+            Text(text ?? bill.label).font(.urbanist(size)).foregroundStyle(Color.qText2)
                 .contentTransition(.opacity)
         }
     }
 
-    // Futura no claro é um anel: ainda não aconteceu.
-    @ViewBuilder private func dot(_ bill: CardsOverview.Bill, light: Bool) -> some View {
+    // Futura é um anel: ainda não aconteceu.
+    @ViewBuilder private func dot(_ bill: CardsOverview.Bill) -> some View {
         Group {
-            if light && bill.status == .future {
-                Circle().strokeBorder(bill.dot(light: true), lineWidth: 1.2)
+            if bill.status == .future {
+                Circle().strokeBorder(bill.dot, lineWidth: 1.2)
             } else {
-                Circle().fill(bill.dot(light: light))
+                Circle().fill(bill.dot)
             }
         }
         .frame(width: 6, height: 6)
@@ -251,13 +250,13 @@ struct CardSheet: View {
 
     private var skeletonRow: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 12).frame(width: 40, height: 40).skeleton(true, dark: true, radius: 12)
+            RoundedRectangle(cornerRadius: 12).frame(width: 40, height: 40).skeleton(true, radius: 12)
             VStack(alignment: .leading, spacing: 6) {
-                Text("Nubank •• 0000").font(.urbanist(15)).skeleton(true, dark: true)
-                Text("Titular · vence 10 nov").font(.urbanist(12)).skeleton(true, dark: true)
+                Text("Nubank •• 0000").font(.urbanist(15)).skeleton(true)
+                Text("Titular · vence 10 nov").font(.urbanist(12)).skeleton(true)
             }
             Spacer()
-            Text("R$ 0.000,00").font(.urbanist(15)).skeleton(true, dark: true)
+            Text("R$ 0.000,00").font(.urbanist(15)).skeleton(true)
         }
         .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 16))
         .frame(minHeight: 64)
@@ -268,8 +267,8 @@ struct CardSheet: View {
     private var retryRow: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("As faturas não carregaram").font(.urbanist(15)).foregroundStyle(.white)
-                Text("O total acima é o último da Início").font(.urbanist(12)).foregroundStyle(Color.qOnDark2)
+                Text("As faturas não carregaram").font(.urbanist(15)).foregroundStyle(Color.qInk)
+                Text("O total acima é o último da Início").font(.urbanist(12)).foregroundStyle(Color.qText2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button {
@@ -282,12 +281,13 @@ struct CardSheet: View {
                 Text(retrying ? "Tentando…" : "Tentar agora").font(.urbanist(13, .semibold)).foregroundStyle(Color.qInk)
                     .padding(.horizontal, 14).frame(height: 36)
                     .background(Color.white, in: .capsule)
+                    .overlay(Capsule().stroke(Color.qLine))
             }
             .buttonStyle(PressStyle())
             .disabled(retrying)
         }
         .padding(16)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.qOnDarkLine))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.qLine))
         .padding(EdgeInsets(top: 14, leading: 20, bottom: 20, trailing: 20))
     }
 
@@ -313,15 +313,14 @@ struct CardSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     MorphAmount(money: bill.total, light: true)
                         .hero("\(card.id).value", in: hero, enabled: !reduceMotion, properties: .position, anchor: .leading)
-                    status(bill, text: bill.detail, size: 13, light: true)
+                    status(bill, text: bill.detail, size: 13)
                     if let pending = card.pending(before: bill.period) { pendingRow(pending) }
                 }
                 .padding(EdgeInsets(top: 16, leading: 20, bottom: 0, trailing: 20))
             }
+            .dragged(drag, dragOpacity)
             .id(card.id)
             .transition(shift)
-            .offset(x: drag)
-            .opacity(dragOpacity)
         }
         // O paginador fica parado enquanto o conteúdo do cartão desliza por baixo dele.
         .overlay(alignment: .topTrailing) { pager(card).padding(EdgeInsets(top: 16, leading: 0, bottom: 0, trailing: 12)) }
@@ -377,7 +376,7 @@ struct CardSheet: View {
     private func pendingRow(_ pending: CardsOverview.Bill) -> some View {
         Button { pick(pending.period) } label: {
             HStack(spacing: 6) {
-                dot(pending, light: true)
+                dot(pending)
                 Text(pending.pendingLine).font(.urbanist(13, .semibold)).foregroundStyle(Color.qAttnInk)
                     .lineLimit(1).minimumScaleFactor(0.8)
                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.qAttnInk)
@@ -436,7 +435,7 @@ struct CardSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(b.month).font(.urbanist(15)).foregroundStyle(Color.qInk)
                     HStack(spacing: 6) {
-                        dot(b, light: true)
+                        dot(b)
                         Text(b.short).font(.urbanist(12)).foregroundStyle(Color.qText2)
                     }
                 }
@@ -541,11 +540,17 @@ struct CardSheet: View {
         .padding(EdgeInsets(top: 8, leading: 20, bottom: 20, trailing: 20))
     }
 
-    /// Anterior entra pela esquerda, próxima pela direita (12px + fade); com Reduce Motion, só crossfade.
+    /// Paginação do quadro 13 (motion/screen, 400ms). O que sai continua de onde o dedo o deixou, mais 16pt, e some
+    /// em 70% do tempo na curva padrão; o que entra vem 16pt do outro lado na curva de entrada, um instante depois,
+    /// cruzando com a saída. Com Reduce Motion, só crossfade.
     private var shift: AnyTransition {
-        guard !reduceMotion else { return .opacity }
-        return .asymmetric(insertion: .offset(x: forward ? 12 : -12).combined(with: .opacity),
-                           removal: .offset(x: forward ? -12 : 12).combined(with: .opacity))
+        guard !reduceMotion else { return .opacity.animation(Motion.standard(Motion.quick)) }
+        let d: CGFloat = forward ? 16 : -16
+        return .asymmetric(
+            insertion: .offset(x: d).combined(with: .opacity)
+                .animation(Motion.enter(Motion.screen).delay(Motion.screen * 0.12)),
+            removal: .offset(x: -d).combined(with: .opacity)
+                .animation(Motion.standard(Motion.screen * 0.7)))
     }
 
     /// A lista cresce do seletor; com Reduce Motion, só aparece.
@@ -553,25 +558,31 @@ struct CardSheet: View {
         reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
     }
 
-    /// No arrasto o conteúdo esmaece até 70% em 42pt: a troca se anuncia antes de acontecer.
-    private var dragOpacity: Double { 1 - 0.3 * min(abs(drag) / 42, 1) }
+    /// No arrasto o conteúdo esmaece até 55%: a troca se anuncia antes de acontecer.
+    private var dragOpacity: Double { 1 - min(0.45, abs(drag) / 140) }
 
-    // Horizontal só quando o gesto é claramente lateral, para não brigar com a rolagem dos lançamentos.
-    // Sem vizinho naquele lado, o arrasto resiste e volta.
+    // A direção trava nos primeiros 8pt (lateral só se dx > 1,2·dy), para não brigar com a rolagem dos lançamentos.
+    // Segue o dedo com resistência (borracha nas pontas) e decide na soltura por distância ou velocidade.
     private var cardDrag: some Gesture {
-        DragGesture(minimumDistance: 14)
+        DragGesture(minimumDistance: 8)
             .onChanged { v in
-                guard abs(v.translation.width) > abs(v.translation.height) else { return }
-                let towards = v.translation.width < 0 ? 1 : -1
-                drag = v.translation.width * (neighbor(towards) == nil ? 0.2 : 0.66)
+                let dx = v.translation.width
+                if lateral == nil { lateral = abs(dx) > abs(v.translation.height) * 1.2 && shown.count > 1 }
+                guard lateral == true else { return }
+                let towards = dx < 0 ? 1 : -1
+                // A direção já entra na transição durante o arrasto: na soltura a troca é imediata.
+                if forward != (towards > 0) { forward = towards > 0 }
+                drag = reduceMotion ? 0 : dx * (neighbor(towards) == nil ? 0.12 : 0.35)
             }
             .onEnded { v in
-                let dx = v.translation.width, flick = v.predictedEndTranslation.width
-                let towards = dx < 0 ? 1 : -1
-                if abs(dx) > abs(v.translation.height), abs(dx) > 64 || abs(flick) > 240, neighbor(towards) != nil {
+                defer { lateral = nil }
+                guard lateral == true else { return }
+                let dx = v.translation.width, towards = dx < 0 ? 1 : -1
+                let flick = -v.velocity.width * CGFloat(towards) > 450
+                if neighbor(towards) != nil, abs(dx) > 64 || flick {
                     step(towards)
                 } else {
-                    withAnimation(reduceMotion ? Motion.standard(Motion.quick) : Motion.spring(Motion.base)) { drag = 0 }
+                    withAnimation(Motion.standard(Motion.base)) { drag = 0 }
                 }
             }
     }
@@ -596,11 +607,12 @@ struct CardSheet: View {
     // Troca de cartão mantendo o mês; sem fatura nele, a atual do cartão novo.
     private func step(_ offset: Int) {
         guard let next = neighbor(offset) else { return }
-        forward = offset > 0
-        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base + 0.04)) {
-            page = .bill(next.id)
-            period = next.period(keeping: period)
-            drag = 0
+        turn(offset > 0) {
+            withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base + 0.04)) {
+                page = .bill(next.id)
+                period = next.period(keeping: period)
+                drag = 0
+            }
         }
     }
 
@@ -608,8 +620,17 @@ struct CardSheet: View {
     private func pick(_ next: String) {
         setPicking(false)
         guard next != period else { return }
-        forward = next > (period ?? "")
-        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base + 0.04)) { period = next }
+        turn(next > (period ?? "")) {
+            withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base + 0.04)) { period = next }
+        }
+    }
+
+    // O que sai usa a transição da última atualização em que ainda existia: se a direção vira,
+    // ela precisa chegar à tela uma atualização antes da troca, senão a saída vai para o lado errado.
+    private func turn(_ ahead: Bool, _ change: @escaping () -> Void) {
+        guard forward != ahead else { return change() }
+        forward = ahead
+        DispatchQueue.main.async(execute: change)
     }
 
     private func setPicking(_ value: Bool) {
@@ -629,6 +650,11 @@ struct CardSheet: View {
     private func escape() {
         if picking { setPicking(false) } else if page == .cards { close() } else { back() }
     }
+}
+
+private extension View {
+    // Dentro da identidade do conteúdo: ao trocar de cartão, o que sai fica onde o dedo o deixou e parte dali.
+    func dragged(_ x: CGFloat, _ opacity: Double) -> some View { offset(x: x).opacity(opacity) }
 }
 
 // Tela do cartão (board 17, quadro 13): saída provisória do modal, rota já pronta.
