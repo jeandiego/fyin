@@ -26,18 +26,31 @@ struct HomeView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        balanceCard(safeTop: geo.safeAreaInsets.top)
-                        monthCards.padding(.horizontal, 12)
+                // Desfoque leve sob o modal (quadro 16 usa 6; aqui um pouco mais), na mesma mola do morph.
+                // O blur é opaco para as bordas não ficarem transparentes (senão o fundo vaza como brilho).
+                // Blur opaco divide cada pixel pelo alfa e fica indefinido (preto) onde a entrada não é opaca,
+                // então tudo o que ele cobre precisa ser opaco: o fundo branco ocupa a área inteira e o
+                // compositingGroup junta fundo e rolagem (que é outra camada) num só buffer antes do blur.
+                // A borda do blur fica fora da tela: a camada desfocada tem 32pt a mais de cada lado
+                // (a rolagem volta ao tamanho da tela por dentro) e ignora a safe area.
+                ZStack {
+                    Color.qBg
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            balanceCard(safeTop: geo.safeAreaInsets.top)
+                            monthCards.padding(.horizontal, 12)
+                        }
+                        .padding(.bottom, 20 + geo.safeAreaInsets.bottom)
                     }
-                    .padding(.bottom, 20)
+                    .scrollEdgeEffectHidden(true, for: .top)
+                    .refreshable { await model.refresh() }
+                    .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
+                    .padding(32)
                 }
-                .ignoresSafeArea(edges: [.top, .horizontal])
-                .scrollEdgeEffectHidden(true, for: .top)
-                .refreshable { await model.refresh() }
-                .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
-                .blur(radius: morph != nil ? 6 : 0)
+                .compositingGroup()
+                .blur(radius: morph != nil ? 10 : 0, opaque: true)
+                .padding(-32)
+                .ignoresSafeArea()
                 .accessibilityHidden(morph != nil)
 
                 Color.qScrim.ignoresSafeArea()
@@ -206,6 +219,19 @@ struct HomeView: View {
         .padding(.top, 6)
     }
 
+    // "R$ 86.641,07" com centavos esmaecidos: é o mesmo número que o modal mostra, então nada muda ao abrir.
+    private var invested: some View {
+        let money = model.current?.invested ?? Money(0)
+        let parts = money.split
+        return HStack(alignment: .lastTextBaseline, spacing: 0) {
+            Text("R$ ")
+            SlotText(text: parts.whole, value: money.value)
+            SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count).foregroundStyle(Color.qOnDark3)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(money.full)
+    }
+
     // A linha inteira é o ponto de partida do morph: fundo, rótulo e valor viram o modal (board 16).
     private var patrimony: some View {
         Button { openMorph(.portfolio) } label: {
@@ -213,7 +239,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Patrimônio investido").font(.urbanist(13)).foregroundStyle(.white.opacity(0.55))
                         .hero(PortfolioHero.label, in: hero, isSource: morph != .portfolio, enabled: !reduceMotion)
-                    slot(model.current?.invested).font(.urbanist(22, .light)).foregroundStyle(.white)
+                    invested.font(.urbanist(22, .light)).foregroundStyle(.white)
                         .hero(PortfolioHero.value, in: hero, isSource: morph != .portfolio, enabled: !reduceMotion,
                               properties: .position, anchor: .leading)
                 }

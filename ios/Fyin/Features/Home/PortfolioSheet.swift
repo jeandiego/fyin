@@ -37,10 +37,10 @@ struct PortfolioSheet: View {
             if page == .accounts { accountsTotal.transition(.blurFade) }
         } content: {
             switch page {
-            case .accounts: accountsPage.transition(.blurFade)
+            case .accounts: accountsPage.transition(.page)
             case .detail(let id):
                 if let account = portfolio.accounts.first(where: { $0.id == id }) {
-                    detailPage(account).transition(.blurFade)
+                    detailPage(account).transition(.page)
                 }
             }
         }
@@ -87,7 +87,7 @@ struct PortfolioSheet: View {
 
     private var accountsTotal: some View {
         VStack(alignment: .leading, spacing: 6) {
-            MorphTotal(money: shownTotal, progress: open ? 1 : 0)
+            MorphTotal(money: shownTotal, progress: open ? 1 : 0, centsAtStart: true)
                 .hero(PortfolioHero.value, in: hero, isSource: open, enabled: !reduceMotion, properties: .position, anchor: .leading)
             Text(countLine).font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
                 .contentTransition(.opacity)
@@ -114,7 +114,7 @@ struct PortfolioSheet: View {
                 .padding(.vertical, 4)
                 .padding(.bottom, 12)
             }
-            .blurFade(!open)
+            .opacity(open ? 1 : 0)
             .animation(open && !reduceMotion ? Motion.spring(Motion.considered).delay(Motion.considered * 0.3) : Motion.standard(Motion.instant), value: open)
         }
     }
