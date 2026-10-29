@@ -13,8 +13,6 @@ struct HomeView: View {
     @State private var morph: Morph?
     @State private var presented: Morph?
     @State private var closes = 0
-    /// Blur da Início sob o modal: só com o modal parado. Animado junto com a mola, o blur de tela cheia engasgava o morph.
-    @State private var backdropBlur = false
     /// Única saída do modal do cartão: push na pilha da home, com o modal montado por baixo.
     @State private var cardRoute: CardRoute?
     @State private var balanceRoom: CGFloat = 0
@@ -39,10 +37,11 @@ struct HomeView: View {
                 .scrollEdgeEffectHidden(true, for: .top)
                 .refreshable { await model.refresh() }
                 .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
-                .blur(radius: backdropBlur ? 6 : 0)
                 .accessibilityHidden(morph != nil)
 
-                Color.qScrim.ignoresSafeArea()
+                // Material do sistema (blur de fundo no render server) + scrim, esmaecendo na mesma mola do morph:
+                // o blur chega junto com o modal, sem custo de blur por frame na Início e sem bordas claras vazando.
+                Rectangle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark).overlay(Color.qScrim).ignoresSafeArea()
                     .opacity(morph != nil ? 1 : 0)
                     .allowsHitTesting(morph != nil)
                     .onTapGesture(perform: closeMorph)
@@ -208,6 +207,19 @@ struct HomeView: View {
         .padding(.top, 6)
     }
 
+    // "R$ 86.641,07" com centavos esmaecidos: é o mesmo número que o modal mostra, então nada muda ao abrir.
+    private var invested: some View {
+        let money = model.current?.invested ?? Money(0)
+        let parts = money.split
+        return HStack(alignment: .lastTextBaseline, spacing: 0) {
+            Text("R$ ")
+            SlotText(text: parts.whole, value: money.value)
+            SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count).foregroundStyle(Color.qOnDark3)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(money.full)
+    }
+
     // A linha inteira é o ponto de partida do morph: fundo, rótulo e valor viram o modal (board 16).
     private var patrimony: some View {
         Button { openMorph(.portfolio) } label: {
@@ -215,7 +227,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Patrimônio investido").font(.urbanist(13)).foregroundStyle(.white.opacity(0.55))
                         .hero(PortfolioHero.label, in: hero, isSource: morph != .portfolio, enabled: !reduceMotion)
-                    slot(model.current?.invested).font(.urbanist(22, .light)).foregroundStyle(.white)
+                    invested.font(.urbanist(22, .light)).foregroundStyle(.white)
                         .hero(PortfolioHero.value, in: hero, isSource: morph != .portfolio, enabled: !reduceMotion,
                               properties: .position, anchor: .leading)
                 }
@@ -429,20 +441,13 @@ struct HomeView: View {
 
     private func openMorph(_ which: Morph) {
         presented = which
-        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.considered)) {
-            morph = which
-        } completion: {
-            guard morph == which else { return }
-            withAnimation(Motion.standard(Motion.quick)) { backdropBlur = true }
-        }
+        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.considered)) { morph = which }
     }
 
     // Inverso da abertura, mais curto. Se reabrir no meio, a mola retoma dali e o modal não some.
     private func closeMorph() {
         closes += 1
         let close = closes
-        // Sai na hora, fora da mola de fechar; sob o scrim a troca não aparece.
-        backdropBlur = false
         withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base)) {
             morph = nil
         } completion: {

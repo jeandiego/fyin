@@ -87,7 +87,7 @@ struct PortfolioSheet: View {
 
     private var accountsTotal: some View {
         VStack(alignment: .leading, spacing: 6) {
-            MorphTotal(money: shownTotal, progress: open ? 1 : 0)
+            MorphTotal(money: shownTotal, progress: open ? 1 : 0, centsAtStart: true)
                 .hero(PortfolioHero.value, in: hero, isSource: open, enabled: !reduceMotion, properties: .position, anchor: .leading)
             Text(countLine).font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
                 .contentTransition(.opacity)

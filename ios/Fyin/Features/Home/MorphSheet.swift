@@ -27,8 +27,6 @@ struct MorphSheet<Top: View, Content: View, Footer: View>: View {
     @State private var topHeight: CGFloat = 60
     @State private var footerHeight: CGFloat = 0
     @State private var edges = ScrollEdges()
-    /// Sombra só com o modal parado: desenhá-la numa forma que muda a cada frame da mola custa caro.
-    @State private var lifted = false
 
     /// Lado da rolagem com mais conteúdo além da borda: só ali o fade aparece.
     private struct ScrollEdges: Equatable {
@@ -78,18 +76,8 @@ struct MorphSheet<Top: View, Content: View, Footer: View>: View {
                 .stroke((light ? Color.qHairline : Color.qOnDarkLine).opacity(open ? 1 : 0))
                 .hero(shell, in: hero, isSource: open, enabled: !reduceMotion)
         }
-        // Fora do matchedGeometryEffect: fica no retângulo do modal aberto e só aparece quando ele pousa.
-        .background {
-            ConcentricRectangle(corners: .concentric(minimum: .fixed(28)), isUniform: false)
-                .fill(light ? Color.qCard : Color.qInk)
-                .shadow(color: .black.opacity(0.32), radius: 30, y: 24)
-                .opacity(lifted ? 1 : 0)
-        }
-        .onChange(of: open) { _, isOpen in
-            // Fechando, some na hora: o modal encolhe e a sombra ficaria no tamanho aberto.
-            guard isOpen else { lifted = false; return }
-            withAnimation(Motion.standard(Motion.quick).delay(Motion.considered)) { lifted = true }
-        }
+        // Sem sombra: o fundo escuro da Início já separa o modal, e a sombra animada pesava na mola
+        // e deixava uma borda clara em volta do modal.
         .accessibilityAddTraits(.isModal)
         .accessibilityAction(.escape) { escape() }
     }
@@ -185,6 +173,8 @@ struct MorphTotal: View, Animatable {
     var ink = Color.white
     /// Tinta aberta: branco no modal escuro, q/ink no claro.
     var to = Color.white
+    /// A origem já mostra os centavos (patrimônio na Início): eles ficam visíveis do começo ao fim.
+    var centsAtStart = false
 
     var animatableData: Double {
         get { progress }
@@ -203,9 +193,11 @@ struct MorphTotal: View, Animatable {
             Text("R$ ").font(.urbanist(lerp(from, 18) / scale, .light)).foregroundStyle(tint.opacity(lerp(1, 0.3)))
             SlotText(text: parts.whole, value: money.value).foregroundStyle(tint)
             SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count)
-                .foregroundStyle(to.opacity(0.3)).opacity(progress)
+                .foregroundStyle(to.opacity(0.3)).opacity(centsAtStart ? 1 : progress)
         }
-        .font(.urbanist(44, .light)).tracking(-1.6)
+        // Tracking compensado pela escala: em progress 0 a largura é a do valor da Início (sem tracking), e o pouso não salta.
+        // Muda só a largura, não a altura da linha, então os rolos não remedem.
+        .font(.urbanist(44, .light)).tracking(lerp(0, -1.6) / scale)
         .fixedSize()
         .scaleEffect(scale, anchor: .leading)
         .accessibilityElement(children: .ignore)
