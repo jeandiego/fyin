@@ -33,15 +33,17 @@ struct HomeView: View {
                     }
                     .padding(.bottom, 20)
                 }
-                .ignoresSafeArea(edges: [.top, .horizontal])
                 .scrollEdgeEffectHidden(true, for: .top)
                 .refreshable { await model.refresh() }
                 .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
+                // Desfoque leve (quadro 16 usa 6; aqui um pouco mais) na mesma mola do morph, chegando junto com o modal.
+                // opaque: as bordas não ficam transparentes, então o fundo branco não vaza como brilho em volta.
+                // Vem antes do ignoresSafeArea para o recorte do blur cobrir também a status bar.
+                .blur(radius: morph != nil ? 10 : 0, opaque: true)
+                .ignoresSafeArea(edges: [.top, .horizontal])
                 .accessibilityHidden(morph != nil)
 
-                // Material do sistema (blur de fundo no render server) + scrim, esmaecendo na mesma mola do morph:
-                // o blur chega junto com o modal, sem custo de blur por frame na Início e sem bordas claras vazando.
-                Rectangle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark).overlay(Color.qScrim).ignoresSafeArea()
+                Color.qScrim.ignoresSafeArea()
                     .opacity(morph != nil ? 1 : 0)
                     .allowsHitTesting(morph != nil)
                     .onTapGesture(perform: closeMorph)
