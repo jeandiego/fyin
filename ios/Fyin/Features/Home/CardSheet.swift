@@ -37,12 +37,15 @@ struct CardSheet: View {
     @State private var page = CardsPage.cards
     @State private var owner: String?
     @State private var period: String?
-    /// Período mais novo que o anterior: entra pela direita.
+    /// Fatura ou cartão mais à frente que o anterior: entra pela direita.
     @State private var forward = true
-    @State private var pill: String?
     @State private var scroll = ScrollPosition(edge: .top)
     @State private var cardsY: CGFloat = 0
     @State private var retrying = false
+    /// Seletor de fatura aberto sobre o topo do modal.
+    @State private var picking = false
+    /// Arrasto lateral da fatura, já amortecido: troca de cartão ao soltar além de 64pt ou num flick.
+    @State private var drag: CGFloat = 0
 
     private var card: CardsOverview.Card? {
         guard case .bill(let id) = page else { return nil }
@@ -51,9 +54,12 @@ struct CardSheet: View {
 
     private var bill: CardsOverview.Bill? { period.flatMap { card?.bill($0) } }
 
+    /// Lista sempre escura; a fatura abre sobre q/card.
+    private var light: Bool { card != nil && bill != nil }
+
     var body: some View {
         MorphSheet(open: open, hero: hero, shell: CardsHero.shell, maxHeight: maxHeight, closedFill: .qCard, closedRadius: 18,
-                   scroll: $scroll, onScroll: { if page == .cards { cardsY = $0 } }, escape: escape) {
+                   light: light, scroll: $scroll, onScroll: { if page == .cards { cardsY = $0 } }, escape: escape) {
             header
             if let card, let bill {
                 billTop(card, bill).transition(.blurFade)
@@ -62,7 +68,9 @@ struct CardSheet: View {
             }
         } content: {
             if let card, let bill {
-                ZStack(alignment: .top) { billLines(bill).id(bill.period).transition(periodShift) }
+                ZStack(alignment: .top) { billLines(bill).id("\(card.id)·\(bill.period)").transition(shift) }
+                    .offset(x: drag)
+                    .opacity(dragOpacity)
                     .transition(.blurFade)
             } else {
                 cardsPage.transition(.blurFade)
@@ -70,11 +78,16 @@ struct CardSheet: View {
         } footer: {
             if let card, let period { detailsButton(card, period).transition(.blurFade) }
         }
+        .overlay(alignment: .top) {
+            if picking, let card, let bill { picker(card, chosen: bill).transition(pickerShift) }
+        }
+        .simultaneousGesture(cardDrag, isEnabled: light && !picking)
         .sensoryFeedback(.selection, trigger: owner)
         .sensoryFeedback(.selection, trigger: page)
         .sensoryFeedback(.selection, trigger: period)
         .onChange(of: open) { _, isOpen in
             guard !isOpen else { return }
+            picking = false
             if page != .cards { page = .cards; period = nil; scroll.scrollTo(edge: .top) }
             // O valor pousa no card da home, que mostra o total de todos: com filtro, os rolos giram de volta.
             if owner != nil { withAnimation(Motion.spring(Motion.base)) { owner = nil } }
@@ -91,11 +104,15 @@ struct CardSheet: View {
                     .padding(.top, 14)
                     .transition(.blurFade)
             } else {
-                MorphIconButton(symbol: "arrow.left", label: "Voltar", action: back).keyboardShortcut(.cancelAction)
+                MorphIconButton(symbol: "arrow.left", label: "Voltar", light: light, action: back).keyboardShortcut(.cancelAction)
                     .transition(.blurFade)
             }
             Spacer()
-            MorphIconButton(symbol: "xmark", label: "Fechar", action: close)
+            if let bill, page != .cards {
+                selector(bill).transition(.blurFade)
+                Spacer()
+            }
+            MorphIconButton(symbol: "xmark", label: "Fechar", light: light, action: close)
                 .keyboardShortcut(page == .cards ? .cancelAction : nil)
                 .blurFade(!open)
         }
@@ -211,11 +228,25 @@ struct CardSheet: View {
         .accessibilityHint("Abre a fatura atual do cartão")
     }
 
-    private func status(_ bill: CardsOverview.Bill, text: String? = nil, size: CGFloat) -> some View {
+    private func status(_ bill: CardsOverview.Bill, text: String? = nil, size: CGFloat, light: Bool = false) -> some View {
         HStack(spacing: 6) {
-            Circle().fill(bill.dot).frame(width: 6, height: 6).accessibilityHidden(true)
-            Text(text ?? bill.label).font(.urbanist(size)).foregroundStyle(Color.qOnDark2).contentTransition(.opacity)
+            dot(bill, light: light)
+            Text(text ?? bill.label).font(.urbanist(size)).foregroundStyle(light ? Color.qText2 : Color.qOnDark2)
+                .contentTransition(.opacity)
         }
+    }
+
+    // Futura no claro é um anel: ainda não aconteceu.
+    @ViewBuilder private func dot(_ bill: CardsOverview.Bill, light: Bool) -> some View {
+        Group {
+            if light && bill.status == .future {
+                Circle().strokeBorder(bill.dot(light: true), lineWidth: 1.2)
+            } else {
+                Circle().fill(bill.dot(light: light))
+            }
+        }
+        .frame(width: 6, height: 6)
+        .accessibilityHidden(true)
     }
 
     private var skeletonRow: some View {
@@ -263,49 +294,170 @@ struct CardSheet: View {
     // MARK: Fatura
 
     private func billTop(_ card: CardsOverview.Card, _ bill: CardsOverview.Bill) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                InstitutionAvatar(institution: card.institution, size: 48)
-                    .hero("\(card.id).avatar", in: hero, enabled: !reduceMotion)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(card.institution).font(.urbanist(22)).foregroundStyle(.white)
-                        .minimumScaleFactor(0.5)
-                        .hero("\(card.id).name", in: hero, enabled: !reduceMotion)
-                    Text(card.holder).font(.urbanist(12)).foregroundStyle(Color.qOnDark2)
-                }
-                .lineLimit(1)
-            }
-            .padding(EdgeInsets(top: 14, leading: 20, bottom: 0, trailing: 20))
-
-            periodPills(card).padding(.top, 16)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(card.title(bill)).font(.urbanist(13)).foregroundStyle(Color.qOnDark2).contentTransition(.opacity)
-                MorphAmount(money: bill.total)
-                    .hero("\(card.id).value", in: hero, enabled: !reduceMotion, properties: .position, anchor: .leading)
-                status(bill, text: bill.detail, size: 13)
-            }
-            .padding(EdgeInsets(top: 16, leading: 20, bottom: 4, trailing: 20))
-        }
-    }
-
-    // Faturas anteriores, a atual (com ponto) e as futuras; a escolhida fica lime e rola para o centro.
-    private func periodPills(_ card: CardsOverview.Card) -> some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                ForEach(card.bills, id: \.period) { b in
-                    MorphPill(title: card.pill(b.period), selected: b.period == period, marked: b.period == card.current) {
-                        choose(b.period)
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 12) {
+                    InstitutionAvatar(institution: card.institution, size: 48)
+                        .hero("\(card.id).avatar", in: hero, enabled: !reduceMotion)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(card.institution).font(.urbanist(22)).foregroundStyle(Color.qInk)
+                            .minimumScaleFactor(0.5)
+                            .hero("\(card.id).name", in: hero, enabled: !reduceMotion)
+                        Text(card.holder).font(.urbanist(12)).foregroundStyle(Color.qText2)
                     }
-                    .id(b.period)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(EdgeInsets(top: 14, leading: 20, bottom: 0, trailing: 108))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    MorphAmount(money: bill.total, light: true)
+                        .hero("\(card.id).value", in: hero, enabled: !reduceMotion, properties: .position, anchor: .leading)
+                    status(bill, text: bill.detail, size: 13, light: true)
+                    if let pending = card.pending(before: bill.period) { pendingRow(pending) }
+                }
+                .padding(EdgeInsets(top: 16, leading: 20, bottom: 0, trailing: 20))
+            }
+            .id(card.id)
+            .transition(shift)
+            .offset(x: drag)
+            .opacity(dragOpacity)
+        }
+        // O paginador fica parado enquanto o conteúdo do cartão desliza por baixo dele.
+        .overlay(alignment: .topTrailing) { pager(card).padding(EdgeInsets(top: 16, leading: 0, bottom: 0, trailing: 12)) }
+    }
+
+    // "Novembro 2026 ⌄": abre a lista de faturas do cartão sobre o topo do modal.
+    private func selector(_ bill: CardsOverview.Bill) -> some View {
+        Button { setPicking(true) } label: { selectorLabel(bill.month, open: false).frame(height: 36) }
+            .buttonStyle(PressStyle())
+            .overlay(Capsule().stroke(Color.qLine))
+            .accessibilityLabel("Fatura de \(bill.month)")
+            .accessibilityHint("Escolhe outra fatura do cartão")
+    }
+
+    private func selectorLabel(_ month: String, open: Bool) -> some View {
+        HStack(spacing: 6) {
+            Text(month).font(.urbanist(14, .semibold)).foregroundStyle(Color.qInk).contentTransition(.opacity)
+            Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.qText2)
+                .rotationEffect(.degrees(open ? 180 : 0))
+        }
+        .padding(.leading, 14).padding(.trailing, 12)
+        .contentShape(Capsule())
+    }
+
+    // "‹ 3/5 ›": troca de cartão entre os da lista (com o filtro dela), mantendo o mês aberto.
+    @ViewBuilder private func pager(_ card: CardsOverview.Card) -> some View {
+        let index = shown.firstIndex { $0.id == card.id } ?? 0
+        if shown.count > 1 {
+            HStack(spacing: 0) {
+                pagerButton("chevron.left", "Cartão anterior", enabled: index > 0) { step(-1) }
+                Text("\(index + 1)/\(shown.count)").font(.urbanist(13)).monospacedDigit().foregroundStyle(Color.qText2)
+                    .frame(minWidth: 28)
+                    .contentTransition(.numericText(countsDown: !forward))
+                    .accessibilityLabel("Cartão \(index + 1) de \(shown.count)")
+                pagerButton("chevron.right", "Próximo cartão", enabled: index < shown.count - 1) { step(1) }
+            }
+        }
+    }
+
+    private func pagerButton(_ symbol: String, _ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(enabled ? Color.qText2 : Color.qGhost)
+                .frame(width: 36, height: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+
+    // A atual ainda tem saldo e é mais antiga que a aberta: avisa em âmbar e leva até ela.
+    private func pendingRow(_ pending: CardsOverview.Bill) -> some View {
+        Button { pick(pending.period) } label: {
+            HStack(spacing: 6) {
+                dot(pending, light: true)
+                Text(pending.pendingLine).font(.urbanist(13, .semibold)).foregroundStyle(Color.qAttnInk)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.qAttnInk)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(PressStyle())
+        .padding(.top, 8)
+        .accessibilityHint("Abre a fatura com saldo")
+    }
+
+    // Lista suspensa: todas as faturas do cartão, com status e valor; a escolhida em q/accent-soft com check.
+    private func picker(_ card: CardsOverview.Card, chosen: CardsOverview.Bill) -> some View {
+        ZStack(alignment: .top) {
+            // Toque fora fecha, sem fechar o modal.
+            Color.white.opacity(0.001).onTapGesture { setPicking(false) }.accessibilityHidden(true)
+            VStack(spacing: 0) {
+                Button { setPicking(false) } label: {
+                    selectorLabel(chosen.month, open: true).frame(maxWidth: .infinity).frame(height: 34)
+                }
+                .buttonStyle(PressStyle())
+                .accessibilityLabel("Fechar a lista de faturas")
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(card.bills, id: \.period) { option($0, chosen: $0.period == chosen.period) }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                    // Abre com a escolhida no centro, sem animar a rolagem.
+                    .onAppear { proxy.scrollTo(chosen.period, anchor: .center) }
+                }
+                .scrollIndicators(.hidden)
+                .frame(height: min(CGFloat(card.bills.count) * 52, 340))
+                .mask {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 24)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 24)
+                    }
                 }
             }
-            .scrollTargetLayout()
+            .padding(.bottom, 4)
+            .background(Color.white, in: .rect(cornerRadius: 27))
+            .overlay(RoundedRectangle(cornerRadius: 27).stroke(Color.qLine))
+            .shadow(color: .black.opacity(0.1), radius: 24, y: 12)
+            .padding(EdgeInsets(top: 15, leading: 16, bottom: 0, trailing: 16))
+            .accessibilityAddTraits(.isModal)
+            .accessibilityAction(.escape) { setPicking(false) }
         }
-        .contentMargins(.horizontal, 20, for: .scrollContent)
-        .scrollIndicators(.hidden)
-        .scrollPosition(id: $pill, anchor: .center)
     }
+
+    private func option(_ b: CardsOverview.Bill, chosen: Bool) -> some View {
+        Button { pick(b.period) } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(b.month).font(.urbanist(15)).foregroundStyle(Color.qInk)
+                    HStack(spacing: 6) {
+                        dot(b, light: true)
+                        Text(b.short).font(.urbanist(12)).foregroundStyle(Color.qText2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(b.total.full).font(.urbanist(15)).monospacedDigit().foregroundStyle(Color.qInk)
+                Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.qInk)
+                    .opacity(chosen ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
+            .padding(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+            .frame(minHeight: 52)
+            .background(chosen ? Color.qAccentSoft : .clear, in: .rect(cornerRadius: 14))
+            .contentShape(.rect)
+        }
+        .buttonStyle(PressStyle())
+        .id(b.period)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+
+    /// Janela de 300pt: a altura do modal não muda ao trocar de fatura ou de cartão; a lista rola dentro dela.
+    private static let window: CGFloat = 300
 
     private func billLines(_ bill: CardsOverview.Bill) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -313,51 +465,65 @@ struct CardSheet: View {
                 emptyBill(bill)
             } else {
                 HStack {
-                    Text("\(Text(bill.status == .future ? "Parcelas já lançadas" : "Lançamentos").font(.urbanist(13, .semibold)).foregroundStyle(.white)) · \(bill.lines.count)")
-                        .font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
+                    Text("\(Text(bill.status == .future ? "Parcelas já lançadas" : "Lançamentos").font(.urbanist(13, .semibold)).foregroundStyle(Color.qInk)) · \(bill.lines.count)")
+                        .font(.urbanist(13)).foregroundStyle(Color.qText2)
                     Spacer()
-                    Text(bill.range).font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
+                    Text(bill.range).font(.urbanist(13)).foregroundStyle(Color.qText2)
                 }
                 .padding(.bottom, 4)
-                ForEach(Array(bill.lines.enumerated()), id: \.offset) { i, line in
-                    lineRow(line)
-                        .overlay(alignment: .bottom) {
-                            if i < bill.lines.count - 1 { Rectangle().fill(Color.qOnDarkLine).frame(height: 1) }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(bill.lines.enumerated()), id: \.offset) { i, line in
+                            lineRow(line)
+                                .overlay(alignment: .bottom) {
+                                    if i < bill.lines.count - 1 { Rectangle().fill(Color.qLine).frame(height: 1) }
+                                }
                         }
+                        if bill.status == .future {
+                            Text("Não é previsão: só o que já está agendado. Compras novas entram até o fechamento, \(MonthLabel.day(bill.closingDate)).")
+                                .font(.urbanist(12)).foregroundStyle(Color.qText3)
+                                .padding(.top, 12)
+                        }
+                    }
+                    .padding(.bottom, 28)
                 }
-                if bill.status == .future {
-                    Text("Não é previsão: só o que já está agendado. Compras novas entram até o fechamento, \(MonthLabel.day(bill.closingDate)).")
-                        .font(.urbanist(12)).foregroundStyle(Color.qOnDark3)
-                        .padding(.top, 12)
+                .scrollIndicators(.hidden)
+                .frame(height: Self.window)
+                .mask {
+                    VStack(spacing: 0) {
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 28)
+                    }
                 }
             }
         }
-        .padding(EdgeInsets(top: 14, leading: 20, bottom: 20, trailing: 20))
+        .frame(height: Self.window + 24, alignment: .top)
+        .padding(EdgeInsets(top: 24, leading: 20, bottom: 12, trailing: 20))
     }
 
-    // Sem parcela, sem número inventado: R$ 0,00 em cima e o aviso no lugar da lista.
+    // Sem parcela, sem número inventado: R$ 0,00 em cima e o aviso no lugar da lista, na mesma altura.
     private func emptyBill(_ bill: CardsOverview.Bill) -> some View {
         let pending = bill.status == .open || bill.status == .future
         return VStack(alignment: .leading, spacing: 6) {
-            Text("Nada lançado para \(MonthLabel.long(bill.period)) ainda").font(.urbanist(17, .semibold)).foregroundStyle(.white)
+            Text("Nada lançado para \(MonthLabel.long(bill.period)) ainda").font(.urbanist(17, .semibold)).foregroundStyle(Color.qInk)
             Text(pending
                  ? "Parcelas e assinaturas aparecem aqui assim que caírem nesta fatura. Compras novas entram até o fechamento, \(MonthLabel.day(bill.closingDate))."
                  : "O banco não mandou lançamentos desta fatura.")
-                .font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
+                .font(.urbanist(13)).foregroundStyle(Color.qText2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.qOnDarkLine))
+        .background(Color.qBg, in: .rect(cornerRadius: 14))
     }
 
     private func lineRow(_ line: CardsOverview.Line) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(line.description).font(.urbanist(15)).foregroundStyle(.white).lineLimit(1)
-                Text(line.detail).font(.urbanist(12)).foregroundStyle(Color.qOnDark2)
+                Text(line.description).font(.urbanist(15)).foregroundStyle(Color.qInk).lineLimit(1)
+                Text(line.detail).font(.urbanist(12)).foregroundStyle(Color.qText2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(line.amount.full).font(.urbanist(15)).tracking(-0.2).monospacedDigit().foregroundStyle(.white)
+            Text(line.amount.full).font(.urbanist(15)).tracking(-0.2).monospacedDigit().foregroundStyle(Color.qInk)
         }
         .padding(.vertical, 12)
         .accessibilityElement(children: .combine)
@@ -365,9 +531,10 @@ struct CardSheet: View {
 
     private func detailsButton(_ card: CardsOverview.Card, _ period: String) -> some View {
         Button { details(CardRoute(id: card.id, period: period)) } label: {
-            Text("Ver detalhes do cartão").font(.urbanist(15)).foregroundStyle(.white)
+            Text("Ver detalhes do cartão").font(.urbanist(15, .semibold)).foregroundStyle(Color.qInk)
                 .frame(maxWidth: .infinity).frame(height: 44)
-                .overlay(Capsule().stroke(Color.white.opacity(0.16)))
+                .background(Color.white, in: .capsule)
+                .overlay(Capsule().stroke(Color.qLine))
                 .contentShape(Capsule())
         }
         .buttonStyle(PressStyle())
@@ -375,10 +542,38 @@ struct CardSheet: View {
     }
 
     /// Anterior entra pela esquerda, próxima pela direita (12px + fade); com Reduce Motion, só crossfade.
-    private var periodShift: AnyTransition {
+    private var shift: AnyTransition {
         guard !reduceMotion else { return .opacity }
         return .asymmetric(insertion: .offset(x: forward ? 12 : -12).combined(with: .opacity),
                            removal: .offset(x: forward ? -12 : 12).combined(with: .opacity))
+    }
+
+    /// A lista cresce do seletor; com Reduce Motion, só aparece.
+    private var pickerShift: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
+    }
+
+    /// No arrasto o conteúdo esmaece até 70% em 42pt: a troca se anuncia antes de acontecer.
+    private var dragOpacity: Double { 1 - 0.3 * min(abs(drag) / 42, 1) }
+
+    // Horizontal só quando o gesto é claramente lateral, para não brigar com a rolagem dos lançamentos.
+    // Sem vizinho naquele lado, o arrasto resiste e volta.
+    private var cardDrag: some Gesture {
+        DragGesture(minimumDistance: 14)
+            .onChanged { v in
+                guard abs(v.translation.width) > abs(v.translation.height) else { return }
+                let towards = v.translation.width < 0 ? 1 : -1
+                drag = v.translation.width * (neighbor(towards) == nil ? 0.2 : 0.66)
+            }
+            .onEnded { v in
+                let dx = v.translation.width, flick = v.predictedEndTranslation.width
+                let towards = dx < 0 ? 1 : -1
+                if abs(dx) > abs(v.translation.height), abs(dx) > 64 || abs(flick) > 240, neighbor(towards) != nil {
+                    step(towards)
+                } else {
+                    withAnimation(reduceMotion ? Motion.standard(Motion.quick) : Motion.spring(Motion.base)) { drag = 0 }
+                }
+            }
     }
 
     // MARK: Ações
@@ -391,22 +586,39 @@ struct CardSheet: View {
             period = card.current
             scroll.scrollTo(edge: .top)
         }
-        pill = card.current
     }
 
-    // Tocar de novo no mesmo período é ignorado; outro no meio da troca retoma dali.
-    private func choose(_ next: String) {
+    private func neighbor(_ offset: Int) -> CardsOverview.Card? {
+        guard let card, let i = shown.firstIndex(where: { $0.id == card.id }), shown.indices.contains(i + offset) else { return nil }
+        return shown[i + offset]
+    }
+
+    // Troca de cartão mantendo o mês; sem fatura nele, a atual do cartão novo.
+    private func step(_ offset: Int) {
+        guard let next = neighbor(offset) else { return }
+        forward = offset > 0
+        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base + 0.04)) {
+            page = .bill(next.id)
+            period = next.period(keeping: period)
+            drag = 0
+        }
+    }
+
+    // Tocar de novo na mesma fatura só fecha a lista; outra no meio da troca retoma dali.
+    private func pick(_ next: String) {
+        setPicking(false)
         guard next != period else { return }
         forward = next > (period ?? "")
-        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base + 0.04)) {
-            period = next
-            pill = next
-            scroll.scrollTo(edge: .top)
-        }
+        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base + 0.04)) { period = next }
+    }
+
+    private func setPicking(_ value: Bool) {
+        withAnimation(reduceMotion ? Motion.standard(Motion.quick) : Motion.spring(Motion.base)) { picking = value }
     }
 
     // Volta com o filtro e a rolagem de antes; o período escolhido é esquecido.
     private func back() {
+        picking = false
         withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base + 0.04)) {
             page = .cards
             period = nil
@@ -415,7 +627,7 @@ struct CardSheet: View {
     }
 
     private func escape() {
-        if page == .cards { close() } else { back() }
+        if picking { setPicking(false) } else if page == .cards { close() } else { back() }
     }
 }
 

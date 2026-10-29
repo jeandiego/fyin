@@ -13,6 +13,8 @@ struct MorphSheet<Top: View, Content: View, Footer: View>: View {
     /// Fundo e raio do card de origem: recolhido, o modal tem a cara dele.
     var closedFill = Color.qInk
     var closedRadius: CGFloat = 0
+    /// Aberto em superfície clara (q/card), como a fatura do cartão; a lista continua escura.
+    var light = false
     @Binding var scroll: ScrollPosition
     var onScroll: (CGFloat) -> Void = { _ in }
     let escape: () -> Void
@@ -70,8 +72,8 @@ struct MorphSheet<Top: View, Content: View, Footer: View>: View {
         .background {
             // Cantos de baixo concêntricos aos do aparelho; os de cima, longe deles, ficam nos 28 do design.
             ConcentricRectangle(corners: .concentric(minimum: .fixed(open ? 28 : closedRadius)), isUniform: false)
-                .fill(open ? Color.qInk : closedFill)
-                .stroke(Color.qOnDarkLine.opacity(open ? 1 : 0))
+                .fill(open ? (light ? Color.qCard : Color.qInk) : closedFill)
+                .stroke((light ? Color.qHairline : Color.qOnDarkLine).opacity(open ? 1 : 0))
                 .shadow(color: .black.opacity(open ? 0.32 : 0), radius: 30, y: 24)
                 .hero(shell, in: hero, isSource: open, enabled: !reduceMotion)
         }
@@ -89,17 +91,19 @@ extension MorphSheet where Footer == EmptyView {
     }
 }
 
-/// Botão redondo de 44pt do topo do modal (Voltar, Fechar).
+/// Botão redondo de 44pt do topo do modal (Voltar, Fechar). Claro: disco branco sobre q/card.
 struct MorphIconButton: View {
     let symbol: String
     let label: String
+    var light = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 18, weight: .medium)).foregroundStyle(.white)
+            Image(systemName: symbol).font(.system(size: 18, weight: .medium)).foregroundStyle(light ? Color.qInk : .white)
                 .frame(width: 44, height: 44)
-                .overlay(Circle().stroke(Color.qOnDarkLine))
+                .background(Circle().fill(light ? Color.white : .clear))
+                .overlay(Circle().stroke(light ? .clear : Color.qOnDarkLine))
                 .contentShape(Circle())
         }
         .buttonStyle(PressStyle())
@@ -107,19 +111,15 @@ struct MorphIconButton: View {
     }
 }
 
-/// Filter Pill / Month Pill sobre o modal escuro: escolhida em lime. `marked` põe o ponto da fatura atual.
+/// Filter Pill sobre o modal escuro: escolhida em lime.
 struct MorphPill: View {
     let title: String
     let selected: Bool
-    var marked = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                if marked { Circle().fill(selected ? Color.qInk : Color.qOnDark2).frame(width: 5, height: 5) }
-                Text(title).font(.urbanist(13))
-            }
+            Text(title).font(.urbanist(13))
             .foregroundStyle(selected ? Color.qInk : .white.opacity(0.7))
             .padding(.horizontal, 14).frame(height: 32)
             .background(Capsule().fill(selected ? Color.qAccent : .clear))
@@ -129,7 +129,6 @@ struct MorphPill: View {
         }
         .buttonStyle(PressStyle())
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityValue(marked ? "fatura atual" : "")
     }
 }
 
@@ -171,13 +170,16 @@ struct MorphAmount: View {
     var symbol = "R$ "
     var size: CGFloat = 36
     var currency: CGFloat = 16
+    /// Sobre q/card: dígitos em q/ink, R$ e centavos em q/ghost.
+    var light = false
 
     var body: some View {
         let parts = money.split
+        let faint = light ? Color.qGhost : Color.qOnDark3
         HStack(alignment: .lastTextBaseline, spacing: 0) {
-            Text(symbol).font(.urbanist(currency, .light)).foregroundStyle(Color.qOnDark3)
-            SlotText(text: parts.whole, value: money.value).foregroundStyle(.white)
-            SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count).foregroundStyle(Color.qOnDark3)
+            Text(symbol).font(.urbanist(currency, .light)).foregroundStyle(faint)
+            SlotText(text: parts.whole, value: money.value).foregroundStyle(light ? Color.qInk : .white)
+            SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count).foregroundStyle(faint)
         }
         .font(.urbanist(size, .light)).tracking(size * -0.036)
         .fixedSize()
