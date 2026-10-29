@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"fyin/internal/cards"
 	"fyin/internal/fx"
 	"fyin/internal/home"
 	"fyin/internal/investments"
@@ -39,6 +40,7 @@ func main() {
 	mux := http.NewServeMux()
 	home.NewHandler(home.NewService(home.NewStore(pool), time.Now)).Register(mux)
 	investments.NewHandler(investments.NewStore(pool)).Register(mux)
+	cards.NewHandler(cards.NewStore(pool), time.Now).Register(mux)
 	// shortcut: um único par de credenciais Pluggy, como no cmd/sync.
 	items.NewHandler(items.NewService(pool, pluggy.New(os.Getenv("CLIENT_ID"), os.Getenv("CLIENT_SECRET")), time.Now)).Register(mux)
 

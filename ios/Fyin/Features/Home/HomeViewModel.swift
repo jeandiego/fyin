@@ -11,6 +11,10 @@ final class HomeViewModel {
     private(set) var refreshing = false
     /// Patrimônio aberto em contas; sempre o atual, não depende do mês.
     private(set) var portfolio: Portfolio?
+    /// Faturas por cartão (modal do card "Cartão"); sempre as atuais, não depende do mês.
+    private(set) var cards: CardsOverview?
+    /// Última busca dos cartões falhou; com dado salvo, ele continua na tela.
+    private(set) var cardsFailed = false
 
     private let repository: HomeRepository
 
@@ -35,6 +39,7 @@ final class HomeViewModel {
     func ensureLoaded() async {
         if selected.flatMap({ summaries[$0] }) == nil { await fetch(selected) }
         if portfolio == nil { portfolio = try? await repository.portfolio() }
+        if cards == nil { await loadCards() }
         // Busca os outros meses dos seletores em segundo plano para a troca ser instantânea.
         for month in months where summaries[month] == nil {
             if let summary = try? await repository.summary(month: month) { summaries[summary.month] = summary }
@@ -52,7 +57,19 @@ final class HomeViewModel {
         async let minimum: Void = { try? await Task.sleep(for: .milliseconds(900)) }()
         await fetch(month)
         if let fresh = try? await repository.portfolio() { portfolio = fresh }
+        await loadCards()
         await minimum
+    }
+
+    func loadCards() async {
+        do {
+            cards = try await repository.cards()
+            cardsFailed = false
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch {
+            cardsFailed = true
+        }
     }
 
     private func fetch(_ month: String?) async {
