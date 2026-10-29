@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"fyin/internal/fx"
 	"fyin/internal/home"
 	"fyin/internal/investments"
 	"fyin/internal/items"
@@ -42,7 +43,7 @@ func main() {
 	items.NewHandler(items.NewService(pool, pluggy.New(os.Getenv("CLIENT_ID"), os.Getenv("CLIENT_SECRET")), time.Now)).Register(mux)
 
 	log.Printf("api em http://%s", addr)
-	log.Fatal(http.ListenAndServe(addr, bearer(token, mux)))
+	log.Fatal(http.ListenAndServe(addr, bearer(token, fx.Refresher(fx.NewService(pool, time.Now), mux))))
 }
 
 func bearer(token string, next http.Handler) http.Handler {
