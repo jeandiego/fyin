@@ -16,6 +16,7 @@ extension Color {
     static let qOk = Color(hex: 0x4E6B4A)
     static let qOver = Color(hex: 0xF0735A)
     static let qOverInk = Color(hex: 0xB5462F)
+    static let qWarn = Color(hex: 0xF4B740)
     static let qGlowLime = Color(hex: 0xB4E02A)
     static let qHairline = Color(hex: 0x0E0D0D, alpha: 0.08)
     static let qScrim = Color(hex: 0x0E0D0D, alpha: 0.35)

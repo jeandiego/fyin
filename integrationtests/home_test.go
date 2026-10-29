@@ -101,7 +101,8 @@ func TestHome_CurrentMonthCountsOnlyRealSpending(t *testing.T) {
 	// financiamento 300 + pix 25 + loja 200 - estorno 50; fora: pagamentos de fatura (categoria, marcador e descrição),
 	// salário e a compra de 30/09 às 23h30
 	assert.Equal(t, map[string]any{"spent": "475.00", "goal": "0.00", "day": 28.0, "daysInMonth": 31.0, "since": nil}, got["spending"])
-	assert.Equal(t, map[string]any{"total": "450.00", "closingDate": "2026-10-02", "dueDate": "2026-10-15"}, got["card"])
+	// outubro (450) foi pago em 06/10: a fatura atual é a de novembro, aberta e ainda sem lançamentos
+	assert.Equal(t, map[string]any{"total": "0.00", "closingDate": "2026-11-02", "dueDate": "2026-11-15"}, got["card"])
 	assert.Equal(t, map[string]any{"total": "48900.00"}, got["loans"])
 	synced, err := time.Parse(time.RFC3339, got["syncedAt"].(string))
 	require.NoError(t, err)

@@ -14,6 +14,7 @@ enum Institutions {
         "nubank": Style(color: Color(hex: 0x820AD1), initials: "nu"),
         "mercado pago": Style(color: Color(hex: 0x00B1EA), initials: "mp"),
         "itaú": Style(color: Color(hex: 0xEC7000), initials: "it"),
+        "bradesco": Style(color: Color(hex: 0xCC092F), initials: "br"),
         "inter": Style(color: Color(hex: 0xFF7A00), initials: "in"),
         "rico": Style(color: Color(hex: 0xE8530E), initials: "ri"),
         "avenue": Style(color: Color(hex: 0x2457F5), initials: "av"),

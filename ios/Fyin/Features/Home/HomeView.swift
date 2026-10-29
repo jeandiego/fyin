@@ -9,12 +9,16 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var pill
     @Namespace private var hero
-    /// Modal do patrimônio: `open` é o destino da geometria; `presented` o mantém visível até recolher de vez.
-    @State private var portfolioOpen = false
-    @State private var portfolioPresented = false
-    @State private var portfolioCloses = 0
+    /// Qual card virou modal: `morph` é o destino da geometria; `presented` o mantém visível até recolher de vez.
+    @State private var morph: Morph?
+    @State private var presented: Morph?
+    @State private var closes = 0
+    /// Única saída do modal do cartão: push na pilha da home, com o modal montado por baixo.
+    @State private var cardRoute: CardRoute?
     @State private var balanceRoom: CGFloat = 0
     @State private var balanceTemplateWidth: CGFloat = 0
+
+    private enum Morph { case portfolio, cards }
 
     private var loading: Bool { model.loading }
     private var busy: Bool { model.refreshing || syncing }
@@ -33,34 +37,47 @@ struct HomeView: View {
                 .scrollEdgeEffectHidden(true, for: .top)
                 .refreshable { await model.refresh() }
                 .tint(.clear) // esconde o spinner do sistema; o andamento aparece na barra do divisor
-                .blur(radius: portfolioOpen ? 6 : 0)
-                .accessibilityHidden(portfolioOpen)
+                .blur(radius: morph != nil ? 6 : 0)
+                .accessibilityHidden(morph != nil)
 
                 Color.qScrim.ignoresSafeArea()
-                    .opacity(portfolioOpen ? 1 : 0)
-                    .allowsHitTesting(portfolioOpen)
-                    .onTapGesture(perform: closePortfolio)
+                    .opacity(morph != nil ? 1 : 0)
+                    .allowsHitTesting(morph != nil)
+                    .onTapGesture(perform: closeMorph)
                     .accessibilityHidden(true)
 
+                let maxHeight = geo.size.height + geo.safeAreaInsets.bottom - 8
                 if let portfolio = model.portfolio {
                     // Sempre no layout (invisível) para já saber a própria altura quando a linha abrir.
-                    PortfolioSheet(portfolio: portfolio, open: portfolioOpen, hero: hero,
-                                   maxHeight: geo.size.height + geo.safeAreaInsets.bottom - 8,
-                                   close: closePortfolio)
-                        // Perto da borda física, sem encostar; os cantos de baixo seguem a curva do aparelho.
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 8)
-                        .opacity(reduceMotion ? (portfolioOpen ? 1 : 0) : (portfolioPresented ? 1 : 0))
-                        .allowsHitTesting(portfolioOpen)
-                        .accessibilityHidden(!portfolioOpen)
-                        .ignoresSafeArea(edges: .bottom)
+                    layer(PortfolioSheet(portfolio: portfolio, open: morph == .portfolio, hero: hero,
+                                         maxHeight: maxHeight, close: closeMorph), .portfolio)
+                }
+                if model.current != nil {
+                    layer(CardSheet(overview: model.cards, failed: model.cardsFailed, fallbackTotal: card?.total ?? Money(0),
+                                    open: morph == .cards, hero: hero, maxHeight: maxHeight, close: closeMorph,
+                                    retry: model.loadCards, details: { cardRoute = $0 }), .cards)
                 }
             }
         }
         .background(Color.qBg)
+        .navigationDestination(item: $cardRoute) { route in
+            CardScreen(card: model.cards?.cards.first { $0.id == route.id }, route: route)
+                .toolbarVisibility(.hidden, for: .navigationBar)
+        }
         .sensoryFeedback(.selection, trigger: model.selected)
         .animation(Motion.standard(Motion.base), value: model.loading)
         .task(id: model.selected) { await model.ensureLoaded() }
+    }
+
+    // Perto da borda física, sem encostar; os cantos de baixo seguem a curva do aparelho.
+    private func layer(_ sheet: some View, _ which: Morph) -> some View {
+        sheet
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+            .opacity(reduceMotion ? (morph == which ? 1 : 0) : (presented == which ? 1 : 0))
+            .allowsHitTesting(morph == which)
+            .accessibilityHidden(morph != which)
+            .ignoresSafeArea(edges: .bottom)
     }
 
     // MARK: Saldo
@@ -191,23 +208,23 @@ struct HomeView: View {
 
     // A linha inteira é o ponto de partida do morph: fundo, rótulo e valor viram o modal (board 16).
     private var patrimony: some View {
-        Button(action: openPortfolio) {
+        Button { openMorph(.portfolio) } label: {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Patrimônio investido").font(.urbanist(13)).foregroundStyle(.white.opacity(0.55))
-                        .hero(PortfolioHero.label, in: hero, isSource: !portfolioOpen, enabled: !reduceMotion)
+                        .hero(PortfolioHero.label, in: hero, isSource: morph != .portfolio, enabled: !reduceMotion)
                     slot(model.current?.invested).font(.urbanist(22, .light)).foregroundStyle(.white)
-                        .hero(PortfolioHero.value, in: hero, isSource: !portfolioOpen, enabled: !reduceMotion,
+                        .hero(PortfolioHero.value, in: hero, isSource: morph != .portfolio, enabled: !reduceMotion,
                               properties: .position, anchor: .leading)
                 }
-                .opacity(portfolioPresented && !reduceMotion ? 0 : 1)
+                .opacity(presented == .portfolio && !reduceMotion ? 0 : 1)
                 .skeleton(loading, dark: true)
                 Spacer()
             }
             .padding(.top, 16)
             .contentShape(.rect)
             .background {
-                Color.qInk.hero(PortfolioHero.shell, in: hero, isSource: !portfolioOpen, enabled: !reduceMotion)
+                Color.qInk.hero(PortfolioHero.shell, in: hero, isSource: morph != .portfolio, enabled: !reduceMotion)
             }
         }
         .buttonStyle(PressStyle())
@@ -244,14 +261,33 @@ struct HomeView: View {
         VStack(spacing: 8) {
             spendingCard
             HStack(spacing: 8) {
-                smallCard("Cartão", card?.total,
-                          card?.closingDate.map { "Fatura fechou \(MonthLabel.day($0))" } ?? "Sem fatura fechada")
+                cardMetric
                 smallCard("Empréstimos", model.current?.loans.total, "Saldo devedor")
             }
         }
     }
 
     private var card: HomeSummary.Card? { model.current?.card }
+
+    // Mês atual: as faturas atuais (as do modal); meses passados: a última fatura fechada.
+    private var cardSub: String {
+        guard let card else { return "Sem fatura" }
+        guard model.selected == model.months.last else {
+            return card.closingDate.map { "Fatura fechou \(MonthLabel.day($0))" } ?? "Sem fatura fechada"
+        }
+        if let closing = card.closingDate { return "Fatura fecha \(MonthLabel.day(closing))" }
+        return card.dueDate.map { "Fatura vence \(MonthLabel.day($0))" } ?? "Sem fatura"
+    }
+
+    // O card inteiro é o ponto de partida do morph: fundo, rótulo e valor viram o modal (board 17).
+    private var cardMetric: some View {
+        Button { openMorph(.cards) } label: {
+            smallCard("Cartão", card?.total, cardSub, morph: .cards)
+        }
+        .buttonStyle(PressStyle())
+        .disabled(model.current == nil)
+        .accessibilityHint("Abre as faturas por cartão")
+    }
     private var spending: HomeSummary.Spending? { model.current?.spending }
 
     private var spendingCard: some View {
@@ -335,11 +371,16 @@ struct HomeView: View {
         }
     }
 
-    private func smallCard(_ title: String, _ value: Money?, _ sub: String) -> some View {
-        VStack(alignment: .leading, spacing: 22) {
-            cardHead(title)
+    /// Com `morph`, rótulo, valor e fundo são a origem do modal (só o cartão, por ora).
+    private func smallCard(_ title: String, _ value: Money?, _ sub: String, morph source: Morph? = nil) -> some View {
+        let heroes = source != nil && !reduceMotion
+        let away = source != nil && presented == source && !reduceMotion
+        return VStack(alignment: .leading, spacing: 22) {
+            cardHead(title, hero: heroes ? CardsHero.label : nil, hidden: away)
             VStack(alignment: .leading, spacing: 2) {
                 slot(value).font(.urbanist(24, .light)).foregroundStyle(Color.qInk)
+                    .hero(CardsHero.value, in: hero, isSource: morph != source, enabled: heroes, properties: .position, anchor: .leading)
+                    .opacity(away ? 0 : 1)
                 Text(sub).font(.urbanist(12)).foregroundStyle(Color.qText3)
                     .contentTransition(.opacity)
                     .animation(Motion.standard(Motion.base), value: sub)
@@ -348,14 +389,21 @@ struct HomeView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.qCard, in: .rect(cornerRadius: 18))
+        .background {
+            RoundedRectangle(cornerRadius: 18).fill(Color.qCard)
+                .hero(CardsHero.shell, in: hero, isSource: morph != source, enabled: heroes)
+        }
+        .contentShape(.rect(cornerRadius: 18))
         .accessibilityElement(children: .combine)
     }
 
     // Com `since` (Mês com dados parciais, board 11), o selo "Desde 14 out" toma o lugar da seta.
-    private func cardHead(_ title: String, since: String? = nil) -> some View {
+    private func cardHead(_ title: String, since: String? = nil, hero id: String? = nil, hidden: Bool = false) -> some View {
         HStack {
-            Text(title).font(.urbanist(14)).foregroundStyle(Color.qText3).skeleton(loading)
+            Text(title).font(.urbanist(14)).foregroundStyle(Color.qText3)
+                .hero(id ?? "", in: hero, isSource: morph != .cards, enabled: id != nil)
+                .opacity(hidden ? 0 : 1)
+                .skeleton(loading)
             Spacer()
             if let since, !loading {
                 HStack(spacing: 6) {
@@ -374,22 +422,22 @@ struct HomeView: View {
 
     // MARK: Ações
 
-    private func openPortfolio() {
-        portfolioPresented = true
-        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.considered)) { portfolioOpen = true }
+    private func openMorph(_ which: Morph) {
+        presented = which
+        withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.considered)) { morph = which }
     }
 
     // Inverso da abertura, mais curto. Se reabrir no meio, a mola retoma dali e o modal não some.
-    private func closePortfolio() {
-        portfolioCloses += 1
-        let close = portfolioCloses
+    private func closeMorph() {
+        closes += 1
+        let close = closes
         withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base)) {
-            portfolioOpen = false
+            morph = nil
         } completion: {
-            // Recolhido, o valor do modal é idêntico ao da linha; espera os rolos do filtro pousarem antes de trocar.
+            // Recolhido, o valor do modal é idêntico ao do card; espera os rolos do filtro pousarem antes de trocar.
             Task {
                 try? await Task.sleep(for: .seconds(1))
-                if !portfolioOpen, close == portfolioCloses { portfolioPresented = false }
+                if morph == nil, close == closes { presented = nil }
             }
         }
     }
@@ -437,7 +485,7 @@ private struct Skeleton: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     func skeleton(_ active: Bool, dark: Bool = false, radius: CGFloat = 6) -> some View {
         modifier(Skeleton(active: active, dark: dark, radius: radius))
     }

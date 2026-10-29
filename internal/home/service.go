@@ -34,7 +34,7 @@ type Summary struct {
 		Since *string `json:"since"`
 	} `json:"spending"`
 	Card struct {
-		Total       string  `json:"total"` // soma da última fatura fechada de cada cartão
+		Total       string  `json:"total"` // mês atual: faturas atuais (GET /v1/cards); passado: última fatura fechada de cada cartão
 		ClosingDate *string `json:"closingDate"`
 		DueDate     *string `json:"dueDate"`
 	} `json:"card"`
@@ -68,7 +68,10 @@ func (s *Service) Month(ctx context.Context, month time.Time) (Summary, error) {
 	if start.Equal(current) {
 		sum.Spending.Day = now.Day()
 	}
-	return sum, s.store.figures(ctx, start, end, &sum)
+	if err := s.store.figures(ctx, start, end, &sum); err != nil || !start.Equal(current) {
+		return sum, err
+	}
+	return sum, s.store.currentCard(ctx, now, &sum)
 }
 
 // CurrentMonth é o mês corrente em São Paulo, o padrão quando o app não escolhe.

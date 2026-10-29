@@ -60,3 +60,14 @@ func (st *Store) figures(ctx context.Context, start, end time.Time, s *Summary) 
 	).Scan(&s.SyncedAt, &s.Balance, &s.Invested, &s.Spending.Spent,
 		&s.Card.Total, &s.Card.ClosingDate, &s.Card.DueDate, &s.Loans.Total, &s.Spending.Since)
 }
+
+// currentCard troca o card do mês atual pelas faturas atuais (as mesmas do modal de cartões, card_bills).
+// closingDate só vem quando todas estão abertas; senão dueDate é o da mais próxima com saldo.
+func (st *Store) currentCard(ctx context.Context, now time.Time, s *Summary) error {
+	return st.pool.QueryRow(ctx, `
+		SELECT coalesce(sum(total), 0)::numeric(14,2)::text,
+			CASE WHEN bool_and(status = 'open') THEN min(closing_date)::text END,
+			coalesce(min(due_date) FILTER (WHERE status <> 'open'), min(due_date))::text
+		FROM card_bills(($1::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date) WHERE is_current`, now,
+	).Scan(&s.Card.Total, &s.Card.ClosingDate, &s.Card.DueDate)
+}

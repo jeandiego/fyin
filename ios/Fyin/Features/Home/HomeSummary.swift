@@ -55,6 +55,12 @@ enum MonthLabel {
         return text.replacingOccurrences(of: ".", with: "").capitalized(with: ptBR)
     }
 
+    /// "2026-11" → "novembro".
+    static func long(_ month: String) -> String {
+        guard let date = try? Date("\(month)-01", strategy: .iso8601.year().month().day()) else { return month }
+        return date.formatted(style.month(.wide))
+    }
+
     /// "2026-10-02" → "2 out".
     static func day(_ isoDate: String) -> String {
         guard let date = try? Date(isoDate, strategy: .iso8601.year().month().day()) else { return isoDate }

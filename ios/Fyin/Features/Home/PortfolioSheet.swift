@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Board "16 · Patrimônio investido · Morph": a linha da home vira um único modal que se transforma
+// Board "16 · Patrimônio investido · Morph": a linha da home vira o MorphSheet, que se transforma
 // (contas → detalhe → contas → linha). Nada empilha, nada navega.
 enum PortfolioPage: Equatable {
     case accounts
@@ -27,77 +27,26 @@ struct PortfolioSheet: View {
     @State private var page = PortfolioPage.accounts
     @State private var owner: String?
     @State private var currency = DisplayCurrency.brl
-    @State private var bodyHeight: CGFloat = 0
     @State private var scroll = ScrollPosition(edge: .top)
     @State private var accountsY: CGFloat = 0
-    @State private var topHeight: CGFloat = 60
-    @State private var edges = ScrollEdges()
-
-    /// Lado da rolagem com mais conteúdo além da borda: só ali o fade aparece.
-    private struct ScrollEdges: Equatable {
-        var top = false
-        var bottom = false
-    }
-
-    // Fade discreto nas bordas da rolagem (16pt em cima, 28pt embaixo) para o texto não terminar em corte seco.
-    private var scrollFade: some View {
-        VStack(spacing: 0) {
-            LinearGradient(colors: [.black.opacity(edges.top ? 0 : 1), .black], startPoint: .top, endPoint: .bottom).frame(height: 16)
-            Color.black
-            LinearGradient(colors: [.black, .black.opacity(edges.bottom ? 0 : 1)], startPoint: .top, endPoint: .bottom).frame(height: 28)
-        }
-        .animation(Motion.standard(Motion.quick), value: edges)
-    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Topo fixo, fora da rolagem: o total viaja da linha da home sem ser recortado pelo ScrollView.
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                if page == .accounts { accountsTotal.transition(.blurFade) }
-            }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topHeight = $0 }
-            ScrollView {
-                ZStack(alignment: .top) {
-                    switch page {
-                    case .accounts: accountsPage.transition(.blurFade)
-                    case .detail(let id):
-                        if let account = portfolio.accounts.first(where: { $0.id == id }) {
-                            detailPage(account).transition(.blurFade)
-                        }
-                    }
-                }
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
-                    // A medida chega depois do layout, fora da transação: anima a altura com a mesma mola.
-                    withAnimation(reduceMotion ? nil : Motion.spring(Motion.base)) { bodyHeight = h }
+        MorphSheet(open: open, hero: hero, shell: PortfolioHero.shell, maxHeight: maxHeight, scroll: $scroll,
+                   onScroll: { if page == .accounts { accountsY = $0 } }, escape: escape) {
+            header
+            if page == .accounts { accountsTotal.transition(.blurFade) }
+        } content: {
+            switch page {
+            case .accounts: accountsPage.transition(.blurFade)
+            case .detail(let id):
+                if let account = portfolio.accounts.first(where: { $0.id == id }) {
+                    detailPage(account).transition(.blurFade)
                 }
             }
-            .scrollPosition($scroll)
-            .scrollBounceBehavior(.basedOnSize)
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
-                if page == .accounts { accountsY = y }
-            }
-            .onScrollGeometryChange(for: ScrollEdges.self) {
-                ScrollEdges(top: $0.contentOffset.y > 1, bottom: $0.contentOffset.y + $0.containerSize.height < $0.contentSize.height - 1)
-            } action: { _, new in edges = new }
-            .frame(height: min(bodyHeight, max(maxHeight - topHeight, 0)))
-            // O conteúdo nunca passa da forma do modal: cantos de baixo concêntricos aos do aparelho, topo reto.
-            .clipShape(ConcentricRectangle(corners: .concentric(minimum: .fixed(0)), isUniform: false))
-            .mask { scrollFade }
-        }
-        .background {
-            // Cantos de baixo concêntricos aos do aparelho; os de cima, longe deles, ficam nos 28 do design.
-            ConcentricRectangle(corners: .concentric(minimum: .fixed(open ? 28 : 0)), isUniform: false)
-                .fill(Color.qInk)
-                .stroke(Color.qOnDarkLine.opacity(open ? 1 : 0))
-                .shadow(color: .black.opacity(open ? 0.32 : 0), radius: 30, y: 24)
-                .hero(PortfolioHero.shell, in: hero, isSource: open, enabled: !reduceMotion)
         }
         .sensoryFeedback(.selection, trigger: owner)
         .sensoryFeedback(.selection, trigger: currency)
         .sensoryFeedback(.selection, trigger: page)
-        .accessibilityAddTraits(.isModal)
-        .accessibilityAction(.escape) { escape() }
         .onChange(of: open) { _, isOpen in
             guard !isOpen else { return }
             if page != .accounts { page = .accounts; scroll.scrollTo(edge: .top) }
@@ -113,7 +62,7 @@ struct PortfolioSheet: View {
     private var header: some View {
         HStack {
             if case .detail = page {
-                iconButton("arrow.left", "Voltar", action: back).keyboardShortcut(.cancelAction)
+                MorphIconButton(symbol: "arrow.left", label: "Voltar", action: back).keyboardShortcut(.cancelAction)
                     .transition(.blurFade)
             } else {
                 Text("Patrimônio investido").font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
@@ -122,23 +71,12 @@ struct PortfolioSheet: View {
                     .transition(.blurFade)
             }
             Spacer()
-            iconButton("xmark", "Fechar", action: close)
+            MorphIconButton(symbol: "xmark", label: "Fechar", action: close)
                 .keyboardShortcut(page == .accounts ? .cancelAction : nil)
                 .blurFade(!open)
         }
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 0, trailing: 16))
         .frame(height: 60, alignment: .bottom)
-    }
-
-    private func iconButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 18, weight: .medium)).foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .overlay(Circle().stroke(Color.qOnDarkLine))
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressStyle())
-        .accessibilityLabel(label)
     }
 
     // MARK: Contas
@@ -149,7 +87,7 @@ struct PortfolioSheet: View {
 
     private var accountsTotal: some View {
         VStack(alignment: .leading, spacing: 6) {
-            PortfolioAmount(money: shownTotal, progress: open ? 1 : 0)
+            MorphTotal(money: shownTotal, progress: open ? 1 : 0)
                 .hero(PortfolioHero.value, in: hero, isSource: open, enabled: !reduceMotion, properties: .position, anchor: .leading)
             Text(countLine).font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
                 .contentTransition(.opacity)
@@ -201,21 +139,10 @@ struct PortfolioSheet: View {
     }
 
     private func pill(_ title: String, _ value: String?) -> some View {
-        let selected = owner == value
-        return Button {
-            guard !selected else { return }
+        MorphPill(title: title, selected: owner == value) {
+            guard owner != value else { return }
             withAnimation(reduceMotion ? Motion.standard(Motion.base) : Motion.spring(Motion.base + 0.04)) { owner = value }
-        } label: {
-            Text(title).font(.urbanist(13))
-                .foregroundStyle(selected ? Color.qInk : .white.opacity(0.7))
-                .padding(.horizontal, 14).frame(height: 32)
-                .background(Capsule().fill(selected ? Color.qAccent : .clear))
-                .overlay(Capsule().stroke(selected ? Color.qAccent : .white.opacity(0.16)))
-                .animation(Motion.standard(Motion.quick), value: selected)
-                .contentShape(Capsule())
         }
-        .buttonStyle(PressStyle())
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     @ViewBuilder private func accountRow(_ account: Portfolio.Account) -> some View {
@@ -279,7 +206,7 @@ struct PortfolioSheet: View {
                 }
                 // Uma só instância nos dois modos: os rolos giram do valor em reais para o em dólar.
                 let usd = shownCurrency == .usd ? account.totalUsd : nil
-                amount(usd ?? account.total, symbol: usd == nil ? "R$ " : "US$ ", size: 36, currency: 16)
+                MorphAmount(money: usd ?? account.total, symbol: usd == nil ? "R$ " : "US$ ")
                     .hero("\(account.id).value", in: hero, enabled: !reduceMotion, properties: .position, anchor: .leading)
                 Text("\(PortfolioKind.share(account.total, of: portfolio.total)) do patrimônio · \(positions(account.positionCount))")
                     .font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
@@ -364,21 +291,6 @@ struct PortfolioSheet: View {
         .accessibilityElement(children: .combine)
     }
 
-    // "R$ 358.041,65": centavos e moeda esmaecidos. Os dígitos são SlotText: trocar R$ por US$ gira os rolos,
-    // como o filtro de titular.
-    private func amount(_ money: Money, symbol: String, size: CGFloat, currency: CGFloat) -> some View {
-        let parts = money.split
-        return HStack(alignment: .lastTextBaseline, spacing: 0) {
-            Text(symbol).font(.urbanist(currency, .light)).foregroundStyle(Color.qOnDark3)
-            SlotText(text: parts.whole, value: money.value).foregroundStyle(.white)
-            SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count).foregroundStyle(Color.qOnDark3)
-        }
-        .font(.urbanist(size, .light)).tracking(size * -0.036)
-        .fixedSize()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(symbol == "R$ " ? money.full : money.fullUsd)
-    }
-
     // MARK: Ações
 
     private func go(_ next: PortfolioPage) {
@@ -401,66 +313,3 @@ struct PortfolioSheet: View {
     }
 }
 
-// Total do modal. Em progress 0 é idêntico ao valor da linha da home ("R$ 28.677", 22pt, R$ branco, sem centavos)
-// e cresce até o do modal (44pt, R$ e centavos esmaecidos) junto com a mola: a troca entre os dois não aparece.
-// Os dígitos são SlotText, então o filtro gira os rolos como o saldo da home.
-struct PortfolioAmount: View, Animatable {
-    let money: Money
-    var progress: Double
-
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    private func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * progress }
-
-    var body: some View {
-        let parts = money.split
-        HStack(alignment: .lastTextBaseline, spacing: 0) {
-            Text("R$ ").font(.urbanist(lerp(22, 18), .light)).foregroundStyle(.white.opacity(lerp(1, 0.3)))
-            SlotText(text: parts.whole, value: money.value).foregroundStyle(.white)
-            SlotText(text: parts.cents, value: money.value, firstReel: parts.whole.count)
-                .foregroundStyle(.white.opacity(0.3)).opacity(progress)
-        }
-        .font(.urbanist(lerp(22, 44), .light)).tracking(lerp(0, -1.6))
-        .fixedSize()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(money.full)
-    }
-}
-
-// Pressão de 100ms (escala 0,98), igual para a linha da home e as linhas do modal.
-struct PressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(Motion.standard(Motion.instant), value: configuration.isPressed)
-    }
-}
-
-// Entrada e saída do conteúdo do modal: fade com blur de 4px.
-private struct BlurFade: ViewModifier {
-    let hidden: Bool
-    func body(content: Content) -> some View {
-        content.opacity(hidden ? 0 : 1).blur(radius: hidden ? 4 : 0)
-    }
-}
-
-extension AnyTransition {
-    static let blurFade = AnyTransition.modifier(active: BlurFade(hidden: true), identity: BlurFade(hidden: false))
-}
-
-extension View {
-    func blurFade(_ hidden: Bool) -> some View { modifier(BlurFade(hidden: hidden)) }
-
-    /// matchedGeometryEffect que some com Reduce Motion (aí tudo vira crossfade).
-    @ViewBuilder func hero(_ id: String, in namespace: Namespace.ID, isSource: Bool = true, enabled: Bool,
-                           properties: MatchedGeometryProperties = .frame, anchor: UnitPoint = .center) -> some View {
-        if enabled {
-            matchedGeometryEffect(id: id, in: namespace, properties: properties, anchor: anchor, isSource: isSource)
-        } else {
-            self
-        }
-    }
-}

@@ -40,7 +40,7 @@ Features pequenas podem manter o SQL no `Service` (como `internal/items`); crie 
 
 ## Contrato com o app
 
-O JSON de `internal/home` e `internal/items` é consumido por `ios/Fyin/Features/*`. Mudou campo, tipo ou rota: atualize no mesmo PR o modelo Swift correspondente (skill `fyin-ios`) e o teste de integração. Prefira adicionar campo a renomear/remover.
+O JSON de `internal/home`, `internal/items`, `internal/investments` e `internal/cards` é consumido por `ios/Fyin/Features/*`. Mudou campo, tipo ou rota: atualize no mesmo PR o modelo Swift correspondente (skill `fyin-ios`) e o teste de integração. Prefira adicionar campo a renomear/remover.
 
 ## Novo endpoint, checklist
 
