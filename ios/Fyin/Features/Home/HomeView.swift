@@ -32,6 +32,9 @@ struct HomeView: View {
                         monthCards.padding(.horizontal, 12)
                     }
                     .padding(.bottom, 20)
+                    // Fundo no próprio conteúdo: o blur opaco age na camada do conteúdo da rolagem e
+                    // pintaria de preto o que nela é transparente (vãos entre os cards e abaixo deles).
+                    .background(Color.qBg)
                 }
                 .scrollEdgeEffectHidden(true, for: .top)
                 .refreshable { await model.refresh() }
