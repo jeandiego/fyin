@@ -86,7 +86,27 @@ Feita depois do import, em `migrations/008_b3_dedup.sql`: a view `b3_holdings` g
 - Chaves, em ordem: ISIN (`raw->>'isin'` × `isin`), ticker (`raw->>'code'` × `code`) e, só em renda fixa, emissor (12 primeiros alfanuméricos de `issuer` × `emissor`/`razaoSocial`) + vencimento + indexador (DI = CDI).
 - Sem chave que case, **as duas somam**: melhor contar duas vezes do que sumir com dinheiro.
 - `/v1/investments` esconde a posição duplicada da conta B3 e o `invested` da home não a soma. O total do import continua sendo a B3 inteira. Contrato JSON não mudou.
-- No banco local, em 30 out 2026, não havia sobreposição real (B3 só com Tesouro do Jean, que a Pluggy não traz); os casos estão semeados em `TestB3_PluggyWinsOverPositionItAlreadyBrings`. O formato do `emissor` da B3 num CDB ainda não foi visto de verdade: conferir no primeiro import da Poliana.
+- No banco local, em 30 out 2026, não havia sobreposição real (B3 só com Tesouro do Jean, que a Pluggy não traz); os casos estão semeados em `TestB3_PluggyWinsOverPositionItAlreadyBrings`. O formato do `emissor` da B3 num CDB ainda não foi visto de verdade.
+
+### Pendência: conferir o fallback por emissor no primeiro import da B3 da Poliana
+
+O fallback é **frágil**: compara só os 12 primeiros caracteres alfanuméricos do emissor (`NUFINANCEIRA`), porque Pluggy e B3 escrevem a razão social de jeitos diferentes e a B3 não traz CNPJ na posição. Pode errar para os dois lados:
+- **Não casar** (B3 escreve diferente, ex. `NU FIN`, ou o campo vem com outro nome que não `emissor`/`razaoSocial`; indexador fora de DI/CDI): o CDB soma duas vezes.
+- **Casar errado** (dois CDBs do mesmo emissor, mesmo vencimento e indexador em corretoras diferentes): a posição da B3 some do total.
+
+Quem é a primeira a ter CDB do Nubank pelos dois lados é a Poliana. Depois do primeiro import dela, rodar no `make psql`:
+
+```sql
+-- CDBs da B3 da Poliana: duplicate deve ser true para os que a Pluggy também traz
+SELECT name, raw->>'emissor' AS emissor, raw->>'razaoSocial' AS razao, indexer, due_date, value, duplicate
+FROM b3_holdings WHERE owner = 'poliana' AND category = 'RendaFixa' ORDER BY due_date;
+-- e comparar com os CDBs ativos da Pluggy dela
+SELECT raw->>'issuer', raw->>'rateType', (raw->>'dueDate')::date, balance
+FROM investments v JOIN items i ON i.id = v.item_id
+WHERE i.owner = 'poliana' AND v.type = 'FIXED_INCOME' AND v.status IS DISTINCT FROM 'TOTAL_WITHDRAWAL' ORDER BY 3;
+```
+
+Se algum CDB que existe nos dois lados ficar com `duplicate = false`, ou um que só existe na B3 ficar `true`, ajustar a regra numa migration nova (e o caso no teste). Se a B3 trouxer CNPJ do emissor, trocar o prefixo de 12 caracteres pelo CNPJ (`raw->>'issuerCNPJ'` na Pluggy).
 
 ## Fora desta entrega
 
