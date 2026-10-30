@@ -15,12 +15,21 @@ struct APIClient: Sendable {
         try await send("POST", path)
     }
 
-    private func send<T: Decodable>(_ method: String, _ path: String, query: [URLQueryItem] = []) async throws -> T {
+    /// POST com corpo JSON já serializado (ex.: páginas cruas da B3, que o app só repassa).
+    func post<T: Decodable>(_ path: String, json body: Data) async throws -> T {
+        try await send("POST", path, body: body)
+    }
+
+    private func send<T: Decodable>(_ method: String, _ path: String, query: [URLQueryItem] = [], body: Data? = nil) async throws -> T {
         var url = baseURL.appending(path: path)
         if !query.isEmpty { url.append(queryItems: query) }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"fyin/internal/b3"
 	"fyin/internal/cards"
 	"fyin/internal/fx"
 	"fyin/internal/home"
@@ -41,6 +42,7 @@ func main() {
 	home.NewHandler(home.NewService(home.NewStore(pool), time.Now)).Register(mux)
 	investments.NewHandler(investments.NewStore(pool)).Register(mux)
 	cards.NewHandler(cards.NewStore(pool), time.Now).Register(mux)
+	b3.NewHandler(b3.NewService(pool, time.Now)).Register(mux)
 	// shortcut: um único par de credenciais Pluggy, como no cmd/sync.
 	items.NewHandler(items.NewService(pool, pluggy.New(os.Getenv("CLIENT_ID"), os.Getenv("CLIENT_SECRET")), time.Now)).Register(mux)
 

@@ -179,6 +179,15 @@ Carregamento por tempo (não por tela): 0–300ms nada · 300ms–2s skeleton ·
 - Regras de gasto: um toggle por categoria; mostra o efeito no mês antes de gravar. Patrimônio manual: Sheet curto (nome + valor, teclado numérico, botão só liga com os dois).
 - VoiceOver anuncia "Sincronizando, 1 de 3 prontos". CPF/documento nunca chegam ao app.
 
+## Fontes fora do Open Finance (quadro 18, B3)
+
+- Em Ajustes, seção "Fora do Open Finance" abaixo das contas: uma linha por dono importado ("B3 · Tesouro e ações", dono + hora + títulos) e "Importar da B3". Nunca misturar com os bancos: não sincroniza sozinha.
+- Desatualizada (>30 dias, decidido pelo servidor): selo "Atualizar" em `q/attn-tint`/`q/attn-ink`, sem push diário.
+- Sheet curta antes de sair: o que acontece em 3 passos, quem guarda a senha, seletor de dono (pílulas), "Entrar na B3" + "Agora não". Fundo sólido `q/bg` (não o vidro do sistema).
+- Site de terceiro em WebView: sheet grande com barra (fechar, título, cadeado + domínio real) e faixa do Fyin acima do site (`q/info-tint` "O Fyin lê só a sua posição", `q/ok-tint` depois do login, `q/attn-tint` se pausar). **O Fyin nunca desenha o site.**
+- Leitura: painel flutuante com etapas reais (entrou → lendo posição → enviando ao Fyin), sem porcentagem. Falha: "Pausada por enquanto" + causa + "Entrar de novo"; a posição salva nunca some.
+- Derivativo (futuro, opção): aparece no detalhe do patrimônio com "fora do total", sem peso nem barra.
+
 ## Modal que se transforma (quadro 16, patrimônio investido)
 
 Uma só superfície com estado `.home | .contas(filtro) | .detalhe(conta)`; nunca sheet sobre sheet. A linha do Card / Hero vira o modal (raio concêntrico ao aparelho: 55 − 12 = 43), ancorado na base a 12pt. Use para: abrir detalhe de uma linha do herói sem navegar. Não use: para tarefa de formulário (Sheet) ou drill-down de 3 níveis (pilha).

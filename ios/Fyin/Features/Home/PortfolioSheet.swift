@@ -239,20 +239,20 @@ struct PortfolioSheet: View {
     private func group(_ group: Portfolio.Group, in account: Portfolio.Account, currency: DisplayCurrency) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("\(Text(PortfolioKind.label(group.kind)).font(.urbanist(13, .semibold)).foregroundStyle(.white)) · \(group.positions.count)")
+                Text("\(Text(group.title).font(.urbanist(13, .semibold)).foregroundStyle(.white)) · \(group.positions.count)")
                     .font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
                 Spacer()
                 let usd = currency == .usd ? group.totalUsd : nil
                 let total = usd ?? group.total
                 HStack(spacing: 0) {
                     SlotText(text: usd == nil ? total.full : total.fullUsd, value: total.value)
-                    Text(" · \(PortfolioKind.share(group.total, of: account.total))")
+                    Text(" · \(group.countsInTotal ? PortfolioKind.share(group.total, of: account.total) : "fora do total")")
                 }
                 .font(.urbanist(13)).foregroundStyle(Color.qOnDark2)
             }
             .padding(.bottom, 4)
             ForEach(Array(group.positions.enumerated()), id: \.offset) { i, position in
-                positionRow(position, label: PortfolioKind.label(group.kind), in: account, currency: currency)
+                positionRow(position, label: group.title, counts: group.countsInTotal, in: account, currency: currency)
                     .overlay(alignment: .bottom) {
                         if i < group.positions.count - 1 { Rectangle().fill(Color.qOnDarkLine).frame(height: 1) }
                     }
@@ -261,7 +261,7 @@ struct PortfolioSheet: View {
         .padding(EdgeInsets(top: 18, leading: 20, bottom: 0, trailing: 20))
     }
 
-    private func positionRow(_ p: Portfolio.Position, label: String, in account: Portfolio.Account, currency: DisplayCurrency) -> some View {
+    private func positionRow(_ p: Portfolio.Position, label: String, counts: Bool, in account: Portfolio.Account, currency: DisplayCurrency) -> some View {
         VStack(spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -275,17 +275,21 @@ struct PortfolioSheet: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     SlotText(text: p.value(currency), value: p.amount(currency).value)
                         .font(.urbanist(15)).tracking(-0.2).foregroundStyle(.white)
-                    Text(PortfolioKind.share(p.balance, of: account.total)).font(.urbanist(12)).foregroundStyle(Color.qOnDark3)
+                    // Derivativo não tem peso: o valor é exposição, não parte do patrimônio.
+                    Text(counts ? PortfolioKind.share(p.balance, of: account.total) : "fora do total")
+                        .font(.urbanist(12)).foregroundStyle(Color.qOnDark3)
                 }
             }
-            // Peso da posição na conta.
-            Capsule().fill(Color.qOnDarkLine).frame(height: 4)
-                .overlay(alignment: .leading) {
-                    GeometryReader { g in
-                        Capsule().fill(.white).frame(width: g.size.width * PortfolioKind.fraction(p.balance, of: account.total))
+            if counts {
+                // Peso da posição na conta.
+                Capsule().fill(Color.qOnDarkLine).frame(height: 4)
+                    .overlay(alignment: .leading) {
+                        GeometryReader { g in
+                            Capsule().fill(.white).frame(width: g.size.width * PortfolioKind.fraction(p.balance, of: account.total))
+                        }
                     }
-                }
-                .accessibilityHidden(true)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.vertical, 12)
         .accessibilityElement(children: .combine)

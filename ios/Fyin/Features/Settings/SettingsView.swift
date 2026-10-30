@@ -1,7 +1,9 @@
 import SwiftUI
 
-struct SettingsView: View {
+struct SettingsView<Extra: View>: View {
     let model: SettingsViewModel
+    /// Seções de outras features abaixo das contas (ex.: B3); a ligação é feita no FyinApp.
+    @ViewBuilder var extra: () -> Extra
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -21,6 +23,7 @@ struct SettingsView: View {
                         .padding(.horizontal, 18).padding(.vertical, 6)
                         .background(Color.qCard, in: .rect(cornerRadius: 28))
                 }
+                extra()
             }
             .padding(.horizontal, 12).padding(.bottom, 24)
         }
@@ -201,6 +204,10 @@ struct SettingsView: View {
         .frame(height: 60)
         .accessibilityElement(children: .combine)
     }
+}
+
+extension SettingsView where Extra == EmptyView {
+    init(model: SettingsViewModel) { self.init(model: model) { EmptyView() } }
 }
 
 // Cores de marca dos bancos do design (Bank Avatar); o que não está na lista fica em tinta.

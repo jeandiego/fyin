@@ -42,6 +42,7 @@ func (st *Store) figures(ctx context.Context, start, end time.Time, s *Summary) 
 			(SELECT coalesce(sum(balance), 0)::numeric(14,2)::text FROM bank),
 			(SELECT (coalesce((SELECT sum(to_brl(balance, raw->>'currencyCode')) FROM investments WHERE status IS DISTINCT FROM 'TOTAL_WITHDRAWAL'), 0)
 			       + coalesce((SELECT sum(value) FROM manual_assets), 0)
+			       + coalesce((SELECT sum(value) FROM b3_holdings WHERE counts), 0)
 			       + coalesce((SELECT sum(to_brl((amt->>'amount')::numeric, amt->>'currencyCode')) FROM accounts a,
 			           jsonb_path_query(a.raw, '$.bankData.reservedBalances[*].availableAmounts[*]') amt
 			           WHERE a.type = 'BANK'), 0))::numeric(14,2)::text),
