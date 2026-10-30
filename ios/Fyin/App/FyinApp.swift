@@ -8,6 +8,7 @@ struct FyinApp: App {
     @State private var home: HomeViewModel
     @State private var settings: SettingsViewModel
     @State private var b3: B3ViewModel
+    @State private var toasts = ToastCenter()
     @State private var showSettings = false
 
     init() {
@@ -38,6 +39,7 @@ struct FyinApp: App {
                 }
                 if showSplash { SplashView { showSplash = false } }
             }
+            .toastHost(toasts)
         }
     }
 }

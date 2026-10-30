@@ -29,6 +29,9 @@ extension Color {
     static let qGlowLime = Color(hex: 0xB4E02A)
     static let qHairline = Color(hex: 0x0E0D0D, alpha: 0.08)
     static let qScrim = Color(hex: 0x0E0D0D, alpha: 0.35)
+    static let qOverTint = Color(hex: 0xFADCD5)
+    static let qShadow = Color(hex: 0x0E0D0D, alpha: 0.16)
+    static let qOnDark = Color.white
     static let qOnDarkLine = Color.white.opacity(0.12)
     static let qOnDark2 = Color.white.opacity(0.55)
     static let qOnDark3 = Color.white.opacity(0.3)

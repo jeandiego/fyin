@@ -34,6 +34,7 @@ Uma pasta por feature. Feature não importa outra feature: a ligação entre ela
 - **Rede**: tudo passa por `APIClient.get/post`. Endpoint novo = método no Repository da feature. Não use `URLSession` direto.
 - **Erros**: ViewModel converte em estado (`failed`), não propaga a exceção para a View. Cancelamento (`CancellationError`, `URLError.cancelled`) não é falha.
 - **Visual**: só tokens de `Theme.swift` (`Color.q*`, `Font.urbanist`, `Motion`), que espelham o `Fyin.pen`. Sem hex ou duração solta na View. Tela nova parte do frame correspondente no `Fyin.pen`.
+- **Toast**: nunca desenhe um na feature. `@Environment(ToastCenter.self) var toasts` e `toasts.show(Toast(id: "operacao", title: …))`; o `ToastCenter` é criado no `FyinApp` e o `.toastHost` aplicado uma vez na raiz. O ViewModel não conhece toast: ele expõe o resultado (`result`) e a View o converte em `Toast` num `.onChange`, como `B3Flow`. Quando usar e quando não, prazos e pilha: skill `fyin-design-system`, seção "Toast".
 - **Movimento**: use `Motion.standard/enter`; respeite `accessibilityReduceMotion`; feedback tátil com `.sensoryFeedback`.
 - **Acessibilidade**: Dynamic Type (`urbanist`, não `urbanistFixed`, salvo exceção justificada), rótulos VoiceOver em elementos sem texto.
 - **Texto da UI** em português (pt-BR), caixa de frase.
