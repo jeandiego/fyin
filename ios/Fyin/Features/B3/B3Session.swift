@@ -18,24 +18,25 @@ enum B3ReadError: Error, Equatable {
 // Única parte que conhece o site da B3 (validado em 30 out 2026). Se a B3 mudar login ou API, só este arquivo muda.
 // A pessoa entra no site dentro da WebView; o app só lê `sessionStorage` depois do login e chama a mesma API
 // que a página usa. O token nunca sai do aparelho e a senha nunca passa pelo app.
-@MainActor final class B3Session: NSObject, B3Reader, WKScriptMessageHandler, WKUIDelegate {
+//
+// O login da B3 só aceita a senha se o antifraude (Transmit DRS) gerar um token, e para isso ele guarda uma
+// CryptoKey no IndexedDB. A WebView só consegue fazer isso se o app tiver Keychain, ou seja, se estiver assinado
+// (no Simulator, "Sign to Run Locally"); sem assinatura o login falha com "Não foi possível concluir o login".
+@MainActor final class B3Session: NSObject, B3Reader, WKUIDelegate {
     static let site = URL(string: "https://www.investidor.b3.com.br/")!
 
     /// Criada a cada fluxo, já com a cena de pé. Criar no init do app (antes da janela) deixava os gestos
     /// da WebView sem ambiente e o primeiro toque derrubava o app (UIKit, _delayTouchesForEvent).
     private(set) var webView: WKWebView?
-    private var onLoggedIn: (@MainActor () -> Void)?
+    private var watcher: Task<Void, Never>?
 
     func start(onLoggedIn: @escaping @MainActor () -> Void) {
-        self.onLoggedIn = onLoggedIn
+        watcher?.cancel()
         let config = WKWebViewConfiguration()
         // Mantém os cookies do login (Azure B2C) entre aberturas, para a B3 pedir menos vezes a senha.
         config.websiteDataStore = .default()
-        // Sem o sufixo do Safari, a WebView se apresenta como app desconhecido e o login da B3 (Azure B2C)
-        // recusa a senha com "Não foi possível concluir o login". Com ele, o user agent fica igual ao do Safari.
+        // User agent igual ao do Safari: a WebView padrão se apresenta como app desconhecido.
         config.applicationNameForUserAgent = "Version/26.0 Mobile/15E148 Safari/604.1"
-        config.userContentController.add(WeakMessageHandler(self), name: "fyin")
-        config.userContentController.addUserScript(WKUserScript(source: Self.watchLogin, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let view = WKWebView(frame: .zero, configuration: config)
         // Link com target=_blank (ajuda, termos do B2C) abre na mesma WebView em vez de sumir.
         view.uiDelegate = self
@@ -44,12 +45,17 @@ enum B3ReadError: Error, Equatable {
         #endif
         view.load(URLRequest(url: Self.site))
         webView = view
-    }
-
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.body as? String == "loggedIn", let callback = onLoggedIn else { return }
-        onLoggedIn = nil
-        callback()
+        watcher = Task { [weak view] in
+            // A página guarda o token no sessionStorage depois do login; o app confere a cada segundo.
+            // Consulta em vez de WKScriptMessageHandler: nada do app fica exposto em `window` para o site.
+            while !Task.isCancelled, let view {
+                try? await Task.sleep(for: .seconds(1))
+                if (try? await view.evaluateJavaScript(Self.isLoggedIn)) as? Bool == true {
+                    onLoggedIn()
+                    return
+                }
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
@@ -73,15 +79,8 @@ enum B3ReadError: Error, Equatable {
         return B3Read(referenceDate: p.referenceDate, pages: p.pages)
     }
 
-    // A página guarda o token no sessionStorage depois do login; avisa o app uma vez.
-    private static let watchLogin = """
-    (function () {
-      if (location.hostname.indexOf('investidor.b3.com.br') < 0) return;
-      var t = setInterval(function () {
-        if (sessionStorage.getItem('token')) { clearInterval(t); window.webkit.messageHandlers.fyin.postMessage('loggedIn'); }
-      }, 500);
-    })();
-    """
+    // Logado = de volta ao site da B3 com o token que a página guarda no sessionStorage.
+    private static let isLoggedIn = "location.hostname.indexOf('investidor.b3.com.br') >= 0 && !!sessionStorage.getItem('token')"
 
     // Mesma API que a tela Minha carteira › Investimentos usa. Devolve as páginas cruas; quem interpreta é o backend.
     // shortcut: o dia de referência é a primeira data de "ultima-execucao" (ou ontem); trocar se a B3 expuser o campo com nome estável.
@@ -112,15 +111,6 @@ enum B3ReadError: Error, Equatable {
     } while (page <= total && page <= 50);
     return JSON.stringify({ referenceDate: ref, pages });
     """
-}
-
-// WKUserContentController segura o handler com referência forte; o proxy evita o ciclo com a sessão.
-private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
-    weak var target: (any WKScriptMessageHandler)?
-    init(_ target: any WKScriptMessageHandler) { self.target = target }
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        target?.userContentController(controller, didReceive: message)
-    }
 }
 
 /// Mostra a WebView do fluxo atual (criada em `start`).
