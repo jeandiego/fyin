@@ -58,7 +58,7 @@ type Store struct{ pool *pgxpool.Pool }
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
 // Portfolio usa as mesmas fontes do "invested" da home: investimentos não resgatados, caixinhas das contas,
-// posição da B3 e ativos manuais. Posições zeradas não aparecem. Ordem: conta, grupo e posição por valor, maior primeiro.
+// posição da B3 que a Pluggy não traz (b3_holdings.duplicate) e ativos manuais. Posições zeradas não aparecem. Ordem: conta, grupo e posição por valor, maior primeiro.
 // Posições em USD são convertidas pela cotação mais recente (to_brl); outras moedas não são tratadas.
 func (st *Store) Portfolio(ctx context.Context) (Portfolio, error) {
 	rows, err := st.pool.Query(ctx, `
@@ -83,7 +83,7 @@ func (st *Store) Portfolio(ctx context.Context) (Portfolio, error) {
 			UNION ALL
 			SELECT 'b3-' || owner, 'B3', owner, false, product_type, name, value, 'BRL', code, quantity::text, indexer, NULL, NULL,
 				due_date::text, NULL, counts, product_label
-			FROM b3_holdings
+			FROM b3_holdings WHERE NOT duplicate
 			UNION ALL
 			SELECT 'manual-' || id, name, owner, true, 'MANUAL', name, value, 'BRL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, true, NULL
 			FROM manual_assets

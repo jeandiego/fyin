@@ -157,3 +157,40 @@ func TestB3_RejectsInvalidImport(t *testing.T) {
 	require.NoError(t, pool.QueryRow(context.Background(), `SELECT count(*) FROM b3_imports`).Scan(&n))
 	assert.Zero(t, n, "import inválido não grava nada")
 }
+
+func TestB3_PluggyWinsOverPositionItAlreadyBrings(t *testing.T) {
+	t.Parallel()
+	pool := testdb.New(t)
+	seedHome(t, pool)
+	// Pluggy de ana: Tesouro com ISIN, ação só com ticker e CDB do Nubank sem ISIN nem ticker.
+	exec(t, pool, `INSERT INTO investments VALUES
+		(gen_random_uuid(), '`+itemID+`', 'FIXED_INCOME', 'Tesouro IPCA+ 2032', 'ACTIVE', 1001.00, '{"isin":"BRSTNCNTB7T1","code":""}'),
+		(gen_random_uuid(), '`+itemID+`', 'EQUITY', 'Petrobras', 'ACTIVE', 3300.00, '{"isin":"","code":"PETR4"}'),
+		(gen_random_uuid(), '`+itemID+`', 'FIXED_INCOME', 'CDB Nubank', 'ACTIVE', 969.20, '{"isin":"","code":"","rateType":"CDI",
+			"dueDate":"2028-03-21T03:00:00.000Z","issuer":"NU FINANCEIRA S.A. - SOCIEDADE DE CREDITO, FINANCIAMENTO E INVESTIMENTO"}')`)
+	rf := `{"categoriaProduto":"RendaFixa","tipoProduto":"CDB","descricaoTipoProduto":"CDB","posicoes":[
+		{"produto":"CDB NU FINANCEIRA","emissor":"NU FINANCEIRA S/A SCFI","indexador":"DI","vencimento":"2028-03-21T00:00:00","valorAtualizado":970},
+		{"produto":"CDB NU FINANCEIRA","emissor":"NU FINANCEIRA S/A SCFI","indexador":"DI","vencimento":"2029-01-10T00:00:00","valorAtualizado":500}]}`
+	page := strings.Replace(b3Page, `"itens":[`, `"itens":[`+rf+`,`, 1)
+
+	code, got := postB3(t, pool, b3Now, importBody("ana", "2026-10-29", page))
+
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, "5670.50", got["total"], "o import mostra a B3 inteira")
+	_, inv := getInvestments(t, pool)
+	_, home := getHome(t, pool, "")
+	// seed 6200.50 + Pluggy 5270.20; da B3 só soma o CDB de 2029, que a Pluggy não traz
+	assert.Equal(t, "11970.70", inv["total"])
+	assert.Equal(t, inv["total"], home["invested"], "a home soma o mesmo que o detalhe")
+	for _, a := range inv["accounts"].([]any) {
+		if a.(map[string]any)["id"] != "b3-ana" {
+			continue
+		}
+		groups := a.(map[string]any)["groups"].([]any)
+		require.Len(t, groups, 2, "Tesouro e ação somem da conta B3; ficam CDB e Futuro")
+		cdb := groups[0].(map[string]any)
+		assert.Equal(t, "CDB", cdb["kind"])
+		require.Len(t, cdb["positions"], 1, "sem chave que case, o CDB de 2029 soma")
+		assert.Equal(t, "2029-01-10", cdb["positions"].([]any)[0].(map[string]any)["dueDate"])
+	}
+}
