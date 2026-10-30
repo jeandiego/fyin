@@ -21,23 +21,21 @@ enum B3ReadError: Error, Equatable {
 @MainActor final class B3Session: NSObject, B3Reader, WKScriptMessageHandler {
     static let site = URL(string: "https://www.investidor.b3.com.br/")!
 
-    let webView: WKWebView
+    /// Criada a cada fluxo, já com a cena de pé. Criar no init do app (antes da janela) deixava os gestos
+    /// da WebView sem ambiente e o primeiro toque derrubava o app (UIKit, _delayTouchesForEvent).
+    private(set) var webView: WKWebView?
     private var onLoggedIn: (@MainActor () -> Void)?
-
-    override init() {
-        let config = WKWebViewConfiguration()
-        // Mantém os cookies do login (Azure B2C) entre aberturas, para a B3 pedir menos vezes a senha.
-        config.websiteDataStore = .default()
-        webView = WKWebView(frame: .zero, configuration: config)
-        super.init()
-        let content = webView.configuration.userContentController
-        content.add(WeakMessageHandler(self), name: "fyin")
-        content.addUserScript(WKUserScript(source: Self.watchLogin, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-    }
 
     func start(onLoggedIn: @escaping @MainActor () -> Void) {
         self.onLoggedIn = onLoggedIn
-        webView.load(URLRequest(url: Self.site))
+        let config = WKWebViewConfiguration()
+        // Mantém os cookies do login (Azure B2C) entre aberturas, para a B3 pedir menos vezes a senha.
+        config.websiteDataStore = .default()
+        config.userContentController.add(WeakMessageHandler(self), name: "fyin")
+        config.userContentController.addUserScript(WKUserScript(source: Self.watchLogin, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        let view = WKWebView(frame: .zero, configuration: config)
+        view.load(URLRequest(url: Self.site))
+        webView = view
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -47,6 +45,7 @@ enum B3ReadError: Error, Equatable {
     }
 
     func read() async throws -> B3Read {
+        guard let webView else { throw B3ReadError.session }
         let value: Any?
         do {
             value = try await webView.callAsyncJavaScript(Self.readPositions, contentWorld: .page)
@@ -110,9 +109,9 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
-/// Mostra a WebView da sessão; a sessão vive no ViewModel, então fechar e reabrir não perde o login.
+/// Mostra a WebView do fluxo atual (criada em `start`).
 struct B3WebView: UIViewRepresentable {
-    let session: B3Session
-    func makeUIView(context: Context) -> WKWebView { session.webView }
+    let webView: WKWebView
+    func makeUIView(context: Context) -> WKWebView { webView }
     func updateUIView(_ view: WKWebView, context: Context) {}
 }

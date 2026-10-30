@@ -68,11 +68,24 @@ extension View {
 private struct B3Flow: ViewModifier {
     let model: B3ViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// O site abre em tela cheia, não em sheet: tocar na WebView dentro de uma sheet derrubava o app
+    /// (UIKit, _delayTouchesForEvent, iOS 26). Só abre depois que a sheet da explicação terminou de fechar.
+    @State private var browsing = false
+
+    private var isBrowserPhase: Bool { model.isFlowActive && model.phase != .explaining }
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: Binding(get: { model.isFlowActive }, set: { if !$0 { model.cancel() } })) {
-                B3FlowSheet(model: model)
+            .sheet(isPresented: Binding(get: { model.phase == .explaining }, set: { if !$0 && model.phase == .explaining { model.cancel() } }),
+                   onDismiss: { if isBrowserPhase { browsing = true } }) {
+                B3ExplainSheet(model: model)
+            }
+            .fullScreenCover(isPresented: $browsing, onDismiss: { if isBrowserPhase { model.cancel() } }) {
+                B3Browser(model: model)
+            }
+            .onChange(of: model.phase) { old, new in
+                // Atualizar (linha de um dono) vai direto ao site; vindo da explicação, quem abre é o onDismiss.
+                if new == .idle { browsing = false } else if isBrowserPhase && old != .explaining { browsing = true }
             }
             .overlay(alignment: .bottom) {
                 if let result = model.result { toast(result).transition(.opacity.combined(with: .move(edge: .bottom))) }
@@ -101,18 +114,20 @@ private struct B3Flow: ViewModifier {
     }
 }
 
-private struct B3FlowSheet: View {
+private struct B3ExplainSheet: View {
     let model: B3ViewModel
+    /// Altura medida da explicação: a sheet abraça o conteúdo (o `.medium` cortava o topo em telas menores e com Dynamic Type).
+    @State private var height: CGFloat = 560
 
     var body: some View {
-        Group {
-            if model.phase == .explaining { B3Explain(model: model) } else { B3Browser(model: model) }
-        }
-        .presentationDetents(model.phase == .explaining ? [.medium] : [.large])
-        .presentationDragIndicator(model.phase == .explaining ? .visible : .hidden)
-        .presentationCornerRadius(28)
-        // Fundo sólido: o vidro padrão do iOS 26 deixava Ajustes aparecer por trás do texto.
-        .presentationBackground(Color.qBg)
+        B3Explain(model: model)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+            .presentationDetents([.height(height)])
+            .presentationDragIndicator(.visible)
+            // Sem raio fixo: o sistema usa o raio concêntrico ao aparelho, como pede o design system.
+            // Fundo sólido: o vidro padrão do iOS 26 deixava Ajustes aparecer por trás do texto.
+            .presentationBackground(Color.qBg)
     }
 }
 
@@ -121,7 +136,7 @@ private struct B3Explain: View {
     let model: B3ViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Importar da B3").font(.urbanist(20, .semibold)).tracking(-0.4).foregroundStyle(Color.qInk)
                     .accessibilityAddTraits(.isHeader)
@@ -169,7 +184,8 @@ private struct B3Explain: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 20).padding(.top, 36).padding(.bottom, 12)
+        // 20 nas laterais (padding de tela) e 32 no topo: respiro entre o grabber e o título.
+        .padding(.horizontal, 20).padding(.top, 32).padding(.bottom, 12)
     }
 }
 
@@ -184,7 +200,7 @@ private struct B3Browser: View {
             notice.padding(.horizontal, 12).padding(.bottom, 12)
             ZStack(alignment: .bottom) {
                 Group {
-                    if let session = model.reader as? B3Session { B3WebView(session: session) } else { Color.qSoft }
+                    if let web = (model.reader as? B3Session)?.webView { B3WebView(webView: web).id(ObjectIdentifier(web)) } else { Color.qSoft }
                 }
                 .opacity(model.phase == .login ? 1 : 0.5)
                 .allowsHitTesting(model.phase == .login)
@@ -213,7 +229,7 @@ private struct B3Browser: View {
             Spacer()
             Color.clear.frame(width: 44, height: 44)
         }
-        .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 8)
+        .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 12)
     }
 
     private var notice: some View {
