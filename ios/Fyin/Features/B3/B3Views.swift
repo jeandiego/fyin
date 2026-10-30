@@ -67,7 +67,7 @@ extension View {
 
 private struct B3Flow: ViewModifier {
     let model: B3ViewModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(ToastCenter.self) private var toasts
     /// O site abre em tela cheia, não em sheet: tocar na WebView dentro de uma sheet derrubava o app
     /// (UIKit, _delayTouchesForEvent, iOS 26). Só abre depois que a sheet da explicação terminou de fechar.
     @State private var browsing = false
@@ -87,30 +87,13 @@ private struct B3Flow: ViewModifier {
                 // Atualizar (linha de um dono) vai direto ao site; vindo da explicação, quem abre é o onDismiss.
                 if new == .idle { browsing = false } else if isBrowserPhase && old != .explaining { browsing = true }
             }
-            .overlay(alignment: .bottom) {
-                if let result = model.result { toast(result).transition(.opacity.combined(with: .move(edge: .bottom))) }
-            }
-            .animation(reduceMotion ? nil : Motion.standard(Motion.base), value: model.result)
             .sensoryFeedback(.success, trigger: model.finished)
-            .task(id: model.result) {
-                guard model.result != nil else { return }
-                try? await Task.sleep(for: .seconds(5))
+            .onChange(of: model.result) { _, result in
+                guard let result else { return }
+                // Exceção B3 documentada no board: 5 s, não os 3 s do compacto.
+                toasts.show(Toast(id: "b3-import", title: result.summary, lifetime: .seconds(5)))
                 model.dismissResult()
             }
-    }
-
-    private func toast(_ r: B3ImportResult) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.qAccent)
-            Text(r.summary).font(.urbanist(14)).foregroundStyle(.white).lineLimit(2)
-            Spacer(minLength: 8)
-        }
-        .padding(.horizontal, 16).frame(minHeight: 52)
-        .background(Color.qInk, in: .capsule)
-        .shadow(color: .black.opacity(0.1), radius: 24, y: 12)
-        .padding(.horizontal, 20).padding(.bottom, 12)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.updatesFrequently)
     }
 }
 

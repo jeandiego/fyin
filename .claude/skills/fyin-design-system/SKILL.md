@@ -116,7 +116,7 @@ Não usar: pizza, linha decorativa, arco-íris, eixos numéricos (o valor import
 
 ### Feedback
 **Alert / Atenção**: ação + prazo, fundo âmbar claro, um por vez no topo da Início, "Depois" recolhe. **Alert / Sucesso**: some em 4s. **Alert / Informação**: fica enquanto a condição existir. Nunca modal.
-**Toast**: confirma + Desfazer, 5s, acima da tab bar, um por vez.
+**Toast** (quadro 19, `msYJe`; código `DesignSystem/Toast/`): ver a seção "Toast" abaixo.
 **Inline Status**: frescor ("Atualizado há 5 min").
 **Push Notification**: só prazo e mudança relevante, máx. 1/dia; valores só se permitido em Ajustes.
 **Skeleton** (Linha/Bloco/Círculo/Row/Card): forma exata do conteúdo, shimmer 1.6s, estático com Reduzir movimento. Escuro: `q/skeleton-dark`.
@@ -139,6 +139,56 @@ Componentes `Fy / Neutro | Piscando | Feliz | Pensando | Atento | Offline`. Esco
 - **Carregamento**: 0–300ms nada · 300ms–2s skeleton (dado antigo fica) · 2–8s skeleton + Inline Status com números reais · >8s libera o app e avisa ao terminar. Falha mantém o último dado com a hora.
 - **Erro**: causa em português (nunca código), preserva dado, depois de resolver volta à mesma tela.
 - **Confirmação**: reversível → executa + Toast Desfazer. Irreversível → Confirmation Sheet. Sempre termina com o resultado visível no lugar.
+
+## Toast (quadro 19)
+
+Uma anatomia só: ícone ou atividade → mensagem + descrição → ação → fechar; progresso embaixo. Slots ausentes não ocupam espaço. Uma instância muda de estado (carregando → progresso → resultado), não há componente de loading nem de progresso. Código: `Toast` + `ToastCenter` (regra, sem SwiftUI), `ToastView`/`ToastStack`, `.toastHost` aplicado uma vez no `FyinApp`. Quem dispara usa `@Environment(ToastCenter.self).show(Toast(id:, title:, …))`. Nunca desenhe toast na feature.
+
+**Usar**
+- Confirmar o resultado de uma ação direta ("Categoria alterada para Mercado" + Desfazer), reversível e sem trocar de tela.
+- Resultado que chega depois de alguns segundos (B3 concluída, sincronização por botão).
+- Falha recuperável que não apaga dado, com uma saída ("Tentar novamente"). O dado salvo continua visível.
+- Tarefa longa em segundo plano: carregando, ou progresso só com total conhecido.
+
+**Não usar**
+- Irreversível (desconectar, apagar): Confirmation Sheet. Toast não confirma o que não dá para desfazer.
+- Erro que exige intervenção: continua na origem (Inline Error, Alert, Account Card). O Toast só informa e oferece saída; nunca prende a pessoa nele.
+- Condição que persiste ou prazo (fatura vencendo, autorização expirando): Alert / Atenção ou Inline Status.
+- Navegar: tocar no corpo não navega; a ação nomeia o destino.
+- Texto longo ou tela rolável dentro do Toast. Se passar de ~40% da área útil: resumo + "Ver detalhes" e o texto completo na origem.
+- CPF, credenciais, códigos técnicos, percentual sem denominador real (B3 usa etapas, nunca % inventada).
+- Vermelho saturado ou fundo colorido para erro.
+
+**Composições e prazos** (o prazo é derivado da composição; `Toast.lifetime` só para exceção documentada)
+
+| Composição | Prazo | Observação |
+| --- | --- | --- |
+| Compacto (só mensagem) | 3 s | confirmação sem ação |
+| Expandido (com descrição) | 6 s | falha recuperável |
+| Ação (ex.: Renovar) | 8 s, ou persistente | persistente se exige intervenção; mostra o fechar |
+| Desfazer | 5 s | só quando a reversão é suportada; a janela é real |
+| Carregando / Progresso | 8 s na frente | depois some da frente; o status fica na origem e a tarefa segue |
+| Exceção B3 | 5 s | `lifetime: .seconds(5)` |
+
+**Semântica** (superfície escura): sucesso `q/accent` · erro `q/over-tint` · atenção `q/attn-tint` · informação `q/info-tint`. Superfície `q/ink`, texto `q/on-dark`, apoio `q/on-dark-2`, ação `q/accent` sobre branco a 10%. Raio 28, sombra `q/shadow` (y 8, blur 24). 362 pt em iPhone de 402 (margem 20, máx. 420), altura 60 compacta. Sobre fundo escuro o Toast é claro (`q/bg` + `q/ink`): só entra com o toast de topo.
+
+**Posição pela origem, não pela semântica**: ação direta e resultado da ação → `bottomCenter` (12 pt acima da safe area, teclado ou tab bar). Evento automático e atualização não solicitada → `topCenter`. A origem registrada no início acompanha a operação até o resultado.
+
+**Pilha (decisão posterior ao board; o quadro 19 diz "não empilhar", isto vale sobre ele)**
+- Vários Toasts ao mesmo tempo formam uma pilha na base: o mais novo na frente, até 3 visíveis, os anteriores espiando atrás (10 pt, escala 0,95 por nível, conteúdo oculto).
+- Tocar na pilha abre todos, cada um com o seu fechar e swipe. Abrir pausa os prazos; recolhe sozinha em 4 s ou ao tocar de novo.
+- Dispensar um (swipe para baixo 44 pt ou fechar) não afeta os outros. A frente nunca cobre um Desfazer sem que ele continue ao alcance dentro da pilha.
+- Mesmo `id` atualiza no lugar. Fila total de 5 (visíveis + espera, FIFO): ao exceder, cai o informativo mais antigo da espera; Toast com ação não é descartado.
+
+**Acessibilidade**: anuncia mensagem + descrição uma vez, sem roubar o foco; ordem mensagem → descrição → ação → fechar; fechar com rótulo "Dispensar notificação" e ação de acessibilidade equivalente. Foco do VoiceOver pausa o prazo; com VoiceOver o mínimo é 8 s (compacto) e 12 s (descrição ou ação). Dynamic Type de acessibilidade reflui ícone, texto e ação na vertical, ação em largura total. Reduzir Movimento: crossfade, sem deslocamento nem escala; atividade vira símbolo estático.
+
+**Movimento (base)**: entrada +12 → 0 pt, opacidade e escala 0,98 → 1, `Motion.spring(Motion.considered)` sem bounce. Overlay não muda o layout nem bloqueia toque no resto da tela.
+
+**Pendente (não implementado)**
+- **Toast de topo e morph.** Entra quando existir o primeiro toast de evento automático (sync agendado, autorização expirada). A cápsula nasce abaixo da safe area (y 70), largura, altura e raio crescem em 320 ms, o conteúdo revela nos últimos 160 ms, a saída leva 240 ms com opacidade primeiro; nunca um banner deslizando de cima. Junto vem a superfície clara, a fila única entre topo e base e a validação em dispositivo.
+- Apresentar acima de uma sheet (hoje o host fica na raiz, abaixo das sheets): transferir a mesma instância, nunca duplicar.
+- Prazo retomado: ao pausar/retomar o prazo recomeça inteiro. Descartar da espera o informativo com mais de 30 s.
+- `Fyin.pen` quadro 19 ainda diz "não empilhar"; atualizar o quadro com a pilha.
 
 ## Estados por situação (quadros 09 a 12)
 
