@@ -7,7 +7,7 @@ Validação técnica: feita no navegador em 30 out 2026 (ver "Fatos da B3").
 
 | Tema | Decisão |
 | --- | --- |
-| Escopo | Posição **completa** da B3 (Tesouro, CDB registrado, ações, FIIs...). Pode duplicar o que já vem pela Pluggy; **deduplicação é a próxima tarefa**, logo depois desta. |
+| Escopo | Posição **completa** da B3 (Tesouro, CDB registrado, ações, FIIs...). O que a Pluggy já traz do mesmo dono não soma de novo (ver Deduplicação). |
 | Dono | A sheet "Importar da B3" pergunta **Jean ou Poliana** antes de abrir o site. |
 | Valor | Entra o **líquido** (`valorLiquido`) no Tesouro; nos demais produtos a B3 só informa `valorAtualizado`, que entra no lugar (mesmo papel do `balance` da Pluggy). Guardamos também aplicado, bruto e atualizado: o objetivo futuro é uma **visão completa de impostos** (IR retido, bruto × líquido por posição). |
 | Derivativos | `categoriaProduto = Derivativo` (Futuro, Opção, Termo, Swap, Box) é **gravado e mostrado, mas não soma** no patrimônio nem no `invested` da home: o valor é exposição/margem, não ativo. |
@@ -78,9 +78,18 @@ Feature nova `ios/Fyin/Features/B3/` (não importa Settings; ligação por closu
 - `Fyin.pen`: o quadro 18 entra no mesmo PR. Promover a componente o **WebView Sheet** e o **Painel de etapas** se forem usados de fato.
 - Skill `fyin-design-system`: adicionar a fonte "Fora do Open Finance" e o padrão de WebView de terceiros (domínio visível, aviso do Fyin, nunca desenhar o site).
 
+## Deduplicação Pluggy × B3
+
+Feita depois do import, em `migrations/008_b3_dedup.sql`: a view `b3_holdings` ganha `duplicate`.
+
+- **A Pluggy vence** (atualiza sozinha); a B3 só cobre o que falta. Compara só com investimentos não resgatados do mesmo dono.
+- Chaves, em ordem: ISIN (`raw->>'isin'` × `isin`), ticker (`raw->>'code'` × `code`) e, só em renda fixa, emissor (12 primeiros alfanuméricos de `issuer` × `emissor`/`razaoSocial`) + vencimento + indexador (DI = CDI).
+- Sem chave que case, **as duas somam**: melhor contar duas vezes do que sumir com dinheiro.
+- `/v1/investments` esconde a posição duplicada da conta B3 e o `invested` da home não a soma. O total do import continua sendo a B3 inteira. Contrato JSON não mudou.
+- No banco local, em 30 out 2026, não havia sobreposição real (B3 só com Tesouro do Jean, que a Pluggy não traz); os casos estão semeados em `TestB3_PluggyWinsOverPositionItAlreadyBrings`. O formato do `emissor` da B3 num CDB ainda não foi visto de verdade: conferir no primeiro import da Poliana.
+
 ## Fora desta entrega
 
-- Deduplicação Pluggy × B3 (**próxima tarefa**).
 - Visão de impostos (bruto, IR, líquido) — dados já ficam guardados.
 - Plano B por planilha (Share Extension).
 - Lembrete mensal por push.
