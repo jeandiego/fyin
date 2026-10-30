@@ -43,6 +43,7 @@
 			SDKROOT = iphoneos;
 			SWIFT_VERSION = 5.0;
 			ONLY_ACTIVE_ARCH = YES;
+			SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 		}; };
 		C2 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
 			ALWAYS_SEARCH_USER_PATHS = NO;
@@ -60,7 +61,7 @@
 			INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance = NO;
 			INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait";
 			CODE_SIGN_STYLE = Automatic;
-			CODE_SIGNING_ALLOWED = NO;
+			"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 			TARGETED_DEVICE_FAMILY = 1;
 		}; };
 		C4 = {isa = XCBuildConfiguration; name = Release; buildSettings = {

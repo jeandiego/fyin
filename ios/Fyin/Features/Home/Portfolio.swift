@@ -16,6 +16,10 @@ struct Portfolio: Decodable, Equatable, Sendable {
 
     struct Group: Decodable, Equatable, Sendable {
         let kind: String
+        /// Rótulo da própria B3 (descricaoTipoProduto), usado quando o app não conhece o tipo.
+        var label: String? = nil
+        /// Derivativo da B3: aparece no detalhe, mas não soma no total da conta nem do patrimônio.
+        var outsideTotal: Bool? = nil
         let total: Money
         var totalUsd: Money? = nil
         let positions: [Position]
@@ -44,6 +48,11 @@ struct Portfolio: Decodable, Equatable, Sendable {
     let accounts: [Account]
 }
 
+extension Portfolio.Group {
+    var title: String { PortfolioKind.label(kind, fallback: label) }
+    var countsInTotal: Bool { outsideTotal != true }
+}
+
 extension Portfolio {
     /// Titulares na ordem em que aparecem (contas já vêm por valor).
     var owners: [String] {
@@ -61,7 +70,7 @@ extension Portfolio.Account {
 
     /// "Jean · Caixinhas + CDB" (até dois produtos, os maiores primeiro).
     var subtitle: String {
-        let kinds = manual ? ["Bem declarado"] : groups.prefix(2).map { PortfolioKind.label($0.kind) }
+        let kinds = manual ? ["Bem declarado"] : groups.prefix(2).map(\.title)
         return ([ownerName] + [kinds.joined(separator: " + ")]).joined(separator: " · ")
     }
 
@@ -110,16 +119,19 @@ enum DisplayCurrency: Equatable { case brl, usd }
 enum PortfolioKind {
     static let ptBR = Locale(identifier: "pt_BR")
 
-    // Subtipos da Pluggy; o que não estiver aqui aparece como veio.
+    // Subtipos da Pluggy e tipos da B3 (tipoProduto); o que não estiver aqui aparece como veio.
     private static let labels = [
         "RESERVE": "Caixinhas", "MANUAL": "Bens", "FIXED_INCOME": "Renda fixa", "EQUITY": "Renda variável",
         "MUTUAL_FUND": "Fundos", "SECURITY": "Previdência", "ETF": "ETFs", "COE": "COE",
         "TREASURY": "Tesouro Direto", "DEBENTURES": "Debêntures", "CDB": "CDB", "RDB": "RDB", "LCI": "LCI", "LCA": "LCA",
         "LC": "LC", "CRI": "CRI", "CRA": "CRA", "STOCK": "Ações", "BDR": "BDRs", "REAL_ESTATE_FUND": "FIIs",
         "INVESTMENT_FUND": "Fundos", "PENSION": "Previdência",
+        "TesouroDireto": "Tesouro Direto", "Acao": "Ações", "FundoInvestimentoImobiliario": "FIIs", "FundoInvestimento": "Fundos",
+        "ETFFundoIndiceAcoes": "ETFs", "ETFFundoIndiceInternacional": "ETFs internacionais", "ETFRendaFixa": "ETFs de renda fixa",
+        "DEB": "Debêntures", "Ouro": "Ouro", "Futuro": "Futuros", "Opcao": "Opções", "Termo": "Termo", "Swap": "Swap",
     ]
 
-    static func label(_ kind: String) -> String { labels[kind] ?? kind.capitalized(with: ptBR) }
+    static func label(_ kind: String, fallback: String? = nil) -> String { labels[kind] ?? fallback ?? kind.capitalized(with: ptBR) }
 
     static func decimal(_ text: String) -> Decimal? { Decimal(string: text, locale: Locale(identifier: "en_US_POSIX")) }
 

@@ -1,0 +1,121 @@
+import SwiftUI
+import WebKit
+
+enum B3ReadError: Error, Equatable {
+    /// O token sumiu ou venceu (60 min, sem refresh): precisa entrar de novo.
+    case session
+    /// A B3 respondeu erro ou mudou o formato: a leitura fica pausada.
+    case unavailable
+}
+
+/// Quem lê a posição na B3. O ViewModel depende só disto; o teste usa um falso.
+@MainActor protocol B3Reader: AnyObject {
+    /// Abre o site e chama `onLoggedIn` uma vez, quando a sessão da B3 aparecer.
+    func start(onLoggedIn: @escaping @MainActor () -> Void)
+    func read() async throws -> B3Read
+}
+
+// Única parte que conhece o site da B3 (validado em 30 out 2026). Se a B3 mudar login ou API, só este arquivo muda.
+// A pessoa entra no site dentro da WebView; o app só lê `sessionStorage` depois do login e chama a mesma API
+// que a página usa. O token nunca sai do aparelho e a senha nunca passa pelo app.
+//
+// O login da B3 só aceita a senha se o antifraude (Transmit DRS) gerar um token, e para isso ele guarda uma
+// CryptoKey no IndexedDB. A WebView só consegue fazer isso se o app tiver Keychain, ou seja, se estiver assinado
+// (no Simulator, "Sign to Run Locally"); sem assinatura o login falha com "Não foi possível concluir o login".
+@MainActor final class B3Session: NSObject, B3Reader, WKUIDelegate {
+    static let site = URL(string: "https://www.investidor.b3.com.br/")!
+
+    /// Criada a cada fluxo, já com a cena de pé. Criar no init do app (antes da janela) deixava os gestos
+    /// da WebView sem ambiente e o primeiro toque derrubava o app (UIKit, _delayTouchesForEvent).
+    private(set) var webView: WKWebView?
+    private var watcher: Task<Void, Never>?
+
+    func start(onLoggedIn: @escaping @MainActor () -> Void) {
+        watcher?.cancel()
+        let config = WKWebViewConfiguration()
+        // Mantém os cookies do login (Azure B2C) entre aberturas, para a B3 pedir menos vezes a senha.
+        config.websiteDataStore = .default()
+        // User agent igual ao do Safari: a WebView padrão se apresenta como app desconhecido.
+        config.applicationNameForUserAgent = "Version/26.0 Mobile/15E148 Safari/604.1"
+        let view = WKWebView(frame: .zero, configuration: config)
+        // Link com target=_blank (ajuda, termos do B2C) abre na mesma WebView em vez de sumir.
+        view.uiDelegate = self
+        #if DEBUG
+        view.isInspectable = true // Safari › Desenvolver › Simulator, para depurar quando a B3 mudar algo
+        #endif
+        view.load(URLRequest(url: Self.site))
+        webView = view
+        watcher = Task { [weak view] in
+            // A página guarda o token no sessionStorage depois do login; o app confere a cada segundo.
+            // Consulta em vez de WKScriptMessageHandler: nada do app fica exposto em `window` para o site.
+            while !Task.isCancelled, let view {
+                try? await Task.sleep(for: .seconds(1))
+                if (try? await view.evaluateJavaScript(Self.isLoggedIn)) as? Bool == true {
+                    onLoggedIn()
+                    return
+                }
+            }
+        }
+    }
+
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if action.targetFrame == nil { webView.load(action.request) }
+        return nil
+    }
+
+    func read() async throws -> B3Read {
+        guard let webView else { throw B3ReadError.session }
+        let value: Any?
+        do {
+            value = try await webView.callAsyncJavaScript(Self.readPositions, contentWorld: .page)
+        } catch {
+            throw "\(error)".contains("sessao") ? B3ReadError.session : B3ReadError.unavailable
+        }
+        struct Payload: Decodable { let referenceDate: String; let pages: [String] }
+        guard let text = value as? String, let p = try? JSONDecoder().decode(Payload.self, from: Data(text.utf8)), !p.pages.isEmpty else {
+            throw B3ReadError.unavailable
+        }
+        return B3Read(referenceDate: p.referenceDate, pages: p.pages)
+    }
+
+    // Logado = de volta ao site da B3 com o token que a página guarda no sessionStorage.
+    private static let isLoggedIn = "location.hostname.indexOf('investidor.b3.com.br') >= 0 && !!sessionStorage.getItem('token')"
+
+    // Mesma API que a tela Minha carteira › Investimentos usa. Devolve as páginas cruas; quem interpreta é o backend.
+    // shortcut: o dia de referência é a primeira data de "ultima-execucao" (ou ontem); trocar se a B3 expuser o campo com nome estável.
+    private static let readPositions = """
+    const tok = sessionStorage.getItem('token');
+    if (!tok) throw new Error('sessao');
+    const guid = encodeURIComponent(sessionStorage.getItem('cache-guid') || '');
+    const headers = { Authorization: 'Bearer ' + tok, Accept: 'application/json' };
+    const get = async (path) => {
+      const r = await fetch('https://investidor.b3.com.br/' + path + (path.includes('?') ? '&' : '?') + 'cache-guid=' + guid, { headers });
+      if (r.status === 401 || r.status === 403) throw new Error('sessao');
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.text();
+    };
+    let ref = null;
+    try {
+      const m = (await get('negocio-sistema/api/sistema/v1/carga/ultima-execucao')).match(/\\d{4}-\\d{2}-\\d{2}/);
+      if (m) ref = m[0];
+    } catch (e) { if (e.message === 'sessao') throw e; }
+    if (!ref) ref = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    const pages = [];
+    let page = 1, total = 1;
+    do {
+      const text = await get('negocio-posicao/api/extrato-posicao/v2/posicao?data=' + ref + '&pagina=' + page);
+      pages.push(text);
+      total = JSON.parse(text).totalPaginas || 1;
+      page++;
+    } while (page <= total && page <= 50);
+    return JSON.stringify({ referenceDate: ref, pages });
+    """
+}
+
+/// Mostra a WebView do fluxo atual (criada em `start`).
+struct B3WebView: UIViewRepresentable {
+    let webView: WKWebView
+    func makeUIView(context: Context) -> WKWebView { webView }
+    func updateUIView(_ view: WKWebView, context: Context) {}
+}

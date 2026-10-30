@@ -19,6 +19,8 @@ enum Institutions {
         "rico": Style(color: Color(hex: 0xE8530E), initials: "ri"),
         "avenue": Style(color: Color(hex: 0x2457F5), initials: "av"),
         "xp investimentos": Style(color: .white, initials: "xp", ink: .qInk),
+        // Posição importada da Área do Investidor (não é conector da Pluggy).
+        "b3": Style(color: .qAccent, initials: "b3", ink: .qInk),
     ]
 
     /// Instituição sem cadastro: duas primeiras letras sobre um cinza neutro.

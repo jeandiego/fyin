@@ -16,7 +16,7 @@ type Portfolio struct {
 	Accounts    []Account `json:"accounts"`
 }
 
-// Account é um item da Pluggy (instituição de um titular) ou um ativo manual.
+// Account é um item da Pluggy (instituição de um titular), a posição de um dono na B3 ("b3-<dono>") ou um ativo manual.
 type Account struct {
 	ID          string  `json:"id"`
 	Institution string  `json:"institution"` // conector da Pluggy; no ativo manual, o nome dele
@@ -28,12 +28,14 @@ type Account struct {
 }
 
 // Group junta as posições de um produto: subtipo da Pluggy (CDB, LCI, STOCK...), tipo se não houver subtipo,
-// RESERVE para caixinhas e MANUAL para ativo manual.
+// RESERVE para caixinhas, MANUAL para ativo manual e o tipoProduto cru da B3 (TesouroDireto, Acao, Futuro...).
 type Group struct {
-	Kind      string     `json:"kind"`
-	Total     string     `json:"total"`
-	TotalUsd  *string    `json:"totalUsd,omitempty"`
-	Positions []Position `json:"positions"`
+	Kind         string     `json:"kind"`
+	Label        *string    `json:"label,omitempty"`        // rótulo da própria B3, para tipos que o app não conhece
+	OutsideTotal bool       `json:"outsideTotal,omitempty"` // derivativo da B3: aparece, mas não soma em nenhum total
+	Total        string     `json:"total"`
+	TotalUsd     *string    `json:"totalUsd,omitempty"`
+	Positions    []Position `json:"positions"`
 }
 
 // Position traz o que a Pluggy informa; o app decide o que mostrar por tipo.
@@ -55,8 +57,8 @@ type Store struct{ pool *pgxpool.Pool }
 
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
-// Portfolio usa as mesmas fontes do "invested" da home: investimentos não resgatados, caixinhas das contas e
-// ativos manuais. Posições zeradas não aparecem. Ordem: conta, grupo e posição por valor, maior primeiro.
+// Portfolio usa as mesmas fontes do "invested" da home: investimentos não resgatados, caixinhas das contas,
+// posição da B3 e ativos manuais. Posições zeradas não aparecem. Ordem: conta, grupo e posição por valor, maior primeiro.
 // Posições em USD são convertidas pela cotação mais recente (to_brl); outras moedas não são tratadas.
 func (st *Store) Portfolio(ctx context.Context) (Portfolio, error) {
 	rows, err := st.pool.Query(ctx, `
@@ -66,39 +68,44 @@ func (st *Store) Portfolio(ctx context.Context) (Portfolio, error) {
 				coalesce(v.raw->>'currencyCode', 'BRL') AS currency, v.raw->>'code' AS code, v.raw->>'quantity' AS quantity,
 				v.raw->>'rateType' AS indexer, v.raw->>'rate' AS rate, v.raw->>'fixedAnnualRate' AS fixed_rate,
 				((v.raw->>'dueDate')::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date::text AS due_date,
-				(v.raw->>'taxExempt')::boolean AS tax_exempt
+				(v.raw->>'taxExempt')::boolean AS tax_exempt, true AS counts, NULL AS label
 			FROM investments v JOIN items i ON i.id = v.item_id
 			WHERE v.status IS DISTINCT FROM 'TOTAL_WITHDRAWAL'
 			UNION ALL
 			SELECT a.item_id::text, i.connector, i.owner, false, 'RESERVE', coalesce(r->>'name', 'Reserva'),
 				(amt->>'amount')::numeric(14,2), coalesce(amt->>'currencyCode', 'BRL'), NULL, NULL,
 				amt#>>'{remuneration,indexer}',
-				round((amt#>>'{remuneration,postFixedIndexerPercentage}')::numeric * 100, 2)::text, NULL, NULL, NULL
+				round((amt#>>'{remuneration,postFixedIndexerPercentage}')::numeric * 100, 2)::text, NULL, NULL, NULL, true, NULL
 			FROM accounts a JOIN items i ON i.id = a.item_id,
 				jsonb_path_query(a.raw, '$.bankData.reservedBalances[*]') r,
 				jsonb_array_elements(r->'availableAmounts') amt
 			WHERE a.type = 'BANK'
 			UNION ALL
-			SELECT 'manual-' || id, name, owner, true, 'MANUAL', name, value, 'BRL', NULL, NULL, NULL, NULL, NULL, NULL, NULL
+			SELECT 'b3-' || owner, 'B3', owner, false, product_type, name, value, 'BRL', code, quantity::text, indexer, NULL, NULL,
+				due_date::text, NULL, counts, product_label
+			FROM b3_holdings
+			UNION ALL
+			SELECT 'manual-' || id, name, owner, true, 'MANUAL', name, value, 'BRL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, true, NULL
 			FROM manual_assets
 		), p AS (
 			SELECT p0.*, to_brl(balance, currency) AS brl FROM p0
 		), t AS (
 			SELECT p.*,
 				sum(brl) OVER (PARTITION BY account, kind) AS group_total,
-				sum(brl) OVER (PARTITION BY account) AS account_total,
-				sum(brl) OVER () AS total,
+				sum(brl) FILTER (WHERE counts) OVER (PARTITION BY account) AS account_total,
+				sum(brl) FILTER (WHERE counts) OVER () AS total,
 				sum(balance) FILTER (WHERE currency = 'USD') OVER (PARTITION BY account, kind) AS group_usd,
 				sum(balance) FILTER (WHERE currency = 'USD') OVER (PARTITION BY account) AS account_usd
 			FROM p
 		)
 		SELECT account, institution, owner, manual, kind, name, brl::text, balance::text, currency, code, quantity,
-			indexer, rate, fixed_rate, due_date, tax_exempt,
-			group_total::numeric(14,2)::text, account_total::numeric(14,2)::text, total::numeric(14,2)::text,
+			indexer, rate, fixed_rate, due_date, tax_exempt, label, NOT counts,
+			group_total::numeric(14,2)::text, coalesce(account_total, 0)::numeric(14,2)::text, coalesce(total, 0)::numeric(14,2)::text,
 			group_usd::numeric(14,2)::text, account_usd::numeric(14,2)::text
 		FROM t WHERE balance <> 0
-		-- t. ordena pelos numéricos; sem ele valeriam as colunas de texto do SELECT ("200.50" > "1000.00")
-		ORDER BY t.account_total DESC, account, t.group_total DESC, kind, t.brl DESC, name`)
+		-- t. ordena pelos numéricos; sem ele valeriam as colunas de texto do SELECT ("200.50" > "1000.00").
+		-- O que não soma (derivativo da B3) vai para o fim da conta.
+		ORDER BY t.account_total DESC NULLS LAST, account, t.counts DESC, t.group_total DESC, kind, t.brl DESC, name`)
 	if err != nil {
 		return Portfolio{}, err
 	}
@@ -110,7 +117,7 @@ func (st *Store) Portfolio(ctx context.Context) (Portfolio, error) {
 		var g Group
 		var p Position
 		if err := rows.Scan(&a.ID, &a.Institution, &a.Owner, &a.Manual, &g.Kind, &p.Name, &p.Balance, &p.Original, &p.Currency,
-			&p.Code, &p.Quantity, &p.Indexer, &p.Rate, &p.FixedRate, &p.DueDate, &p.TaxExempt,
+			&p.Code, &p.Quantity, &p.Indexer, &p.Rate, &p.FixedRate, &p.DueDate, &p.TaxExempt, &g.Label, &g.OutsideTotal,
 			&g.Total, &a.Total, &out.Total, &g.TotalUsd, &a.TotalUsd); err != nil {
 			return Portfolio{}, err
 		}

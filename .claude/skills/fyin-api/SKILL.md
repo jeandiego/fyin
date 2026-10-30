@@ -12,7 +12,8 @@ Go + Postgres (pgx) + `net/http` (ServeMux). Sem framework, sem ORM. Módulo `fy
 ```
 cmd/api, cmd/sync      composição: lê env, monta dependências, sobe. Sem regra de negócio.
 internal/<feature>/    uma pasta por feature: handler.go + service.go (+ store.go)
-internal/pluggy        client HTTP da Pluggy (única fronteira externa)
+internal/pluggy        client HTTP da Pluggy (única fronteira externa do servidor)
+internal/b3            posição da B3 que o app lê no site e envia crua; tabelas próprias, fora de items
 internal/sync          cópia Pluggy → Postgres, numa transação
 internal/testdb        banco isolado por teste
 migrations/            NNN_nome.sql, embutidas em migrations/embed.go
@@ -40,7 +41,7 @@ Features pequenas podem manter o SQL no `Service` (como `internal/items`); crie 
 
 ## Contrato com o app
 
-O JSON de `internal/home`, `internal/items`, `internal/investments` e `internal/cards` é consumido por `ios/Fyin/Features/*`. Mudou campo, tipo ou rota: atualize no mesmo PR o modelo Swift correspondente (skill `fyin-ios`) e o teste de integração. Prefira adicionar campo a renomear/remover.
+O JSON de `internal/home`, `internal/items`, `internal/investments`, `internal/cards` e `internal/b3` é consumido por `ios/Fyin/Features/*`. Mudou campo, tipo ou rota: atualize no mesmo PR o modelo Swift correspondente (skill `fyin-ios`) e o teste de integração. Prefira adicionar campo a renomear/remover.
 
 ## Novo endpoint, checklist
 
