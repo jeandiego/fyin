@@ -18,7 +18,7 @@ enum B3ReadError: Error, Equatable {
 // Única parte que conhece o site da B3 (validado em 30 out 2026). Se a B3 mudar login ou API, só este arquivo muda.
 // A pessoa entra no site dentro da WebView; o app só lê `sessionStorage` depois do login e chama a mesma API
 // que a página usa. O token nunca sai do aparelho e a senha nunca passa pelo app.
-@MainActor final class B3Session: NSObject, B3Reader, WKScriptMessageHandler {
+@MainActor final class B3Session: NSObject, B3Reader, WKScriptMessageHandler, WKUIDelegate {
     static let site = URL(string: "https://www.investidor.b3.com.br/")!
 
     /// Criada a cada fluxo, já com a cena de pé. Criar no init do app (antes da janela) deixava os gestos
@@ -31,9 +31,17 @@ enum B3ReadError: Error, Equatable {
         let config = WKWebViewConfiguration()
         // Mantém os cookies do login (Azure B2C) entre aberturas, para a B3 pedir menos vezes a senha.
         config.websiteDataStore = .default()
+        // Sem o sufixo do Safari, a WebView se apresenta como app desconhecido e o login da B3 (Azure B2C)
+        // recusa a senha com "Não foi possível concluir o login". Com ele, o user agent fica igual ao do Safari.
+        config.applicationNameForUserAgent = "Version/26.0 Mobile/15E148 Safari/604.1"
         config.userContentController.add(WeakMessageHandler(self), name: "fyin")
         config.userContentController.addUserScript(WKUserScript(source: Self.watchLogin, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let view = WKWebView(frame: .zero, configuration: config)
+        // Link com target=_blank (ajuda, termos do B2C) abre na mesma WebView em vez de sumir.
+        view.uiDelegate = self
+        #if DEBUG
+        view.isInspectable = true // Safari › Desenvolver › Simulator, para depurar quando a B3 mudar algo
+        #endif
         view.load(URLRequest(url: Self.site))
         webView = view
     }
@@ -42,6 +50,12 @@ enum B3ReadError: Error, Equatable {
         guard message.body as? String == "loggedIn", let callback = onLoggedIn else { return }
         onLoggedIn = nil
         callback()
+    }
+
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if action.targetFrame == nil { webView.load(action.request) }
+        return nil
     }
 
     func read() async throws -> B3Read {
